@@ -26,6 +26,11 @@ class JoinRoomIn(BaseModel):
     name: str = Field(min_length=1, max_length=20)
 
 
+class RejoinRoomIn(BaseModel):
+    room_code: str = Field(min_length=config.ROOM_CODE_LENGTH, max_length=config.ROOM_CODE_LENGTH)
+    player_id: str = Field(min_length=1, max_length=64)
+
+
 class SubmitAnswerIn(BaseModel):
     question_idx: int = Field(ge=0)
     option_idx: int = Field(ge=0, le=3)

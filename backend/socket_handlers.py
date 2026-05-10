@@ -81,6 +81,23 @@ def register(sio: socketio.AsyncServer) -> None:
             return _ack(f"server error: {e}")
 
     @sio.event
+    async def rejoin_room(sid: str, data: dict | None) -> dict:
+        try:
+            payload = models.RejoinRoomIn.model_validate(data or {})
+            return _ack(None, **await mgr.rejoin_room(
+                sid=sid,
+                room_code=payload.room_code.upper(),
+                player_id=payload.player_id,
+            ))
+        except ValidationError as e:
+            return _ack(str(e))
+        except RoomError as e:
+            return _ack(str(e))
+        except Exception as e:  # pragma: no cover
+            log.exception("rejoin_room")
+            return _ack(f"server error: {e}")
+
+    @sio.event
     async def start_game(sid: str, _data: dict | None = None) -> dict:
         try:
             await mgr.start_game_by_host(sid)

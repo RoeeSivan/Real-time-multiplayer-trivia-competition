@@ -76,11 +76,28 @@ export function useGameSocket(): GameState {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const sockRef = useRef<Socket | null>(null);
+  const sessionRef = useRef<{ room_code: string; player_id: string } | null>(null);
 
   useEffect(() => {
     const s = getSocket();
     sockRef.current = s;
     setSocket(s);
+
+    // Auto-rejoin on every (re)connect using the cached session.
+    const onConnect = async () => {
+      const cached = sessionRef.current;
+      if (!cached) return;
+      try {
+        const ack = await s.emitWithAck("rejoin_room", cached);
+        if (!ack?.ok) {
+          // Session expired — drop the cache so the user can start fresh.
+          sessionRef.current = null;
+        }
+      } catch {
+        /* ignore — next connect will retry */
+      }
+    };
+    s.on("connect", onConnect);
 
     const onLobby = (d: LobbyUpdateEvt) => {
       setPlayers(d.players);
@@ -125,6 +142,7 @@ export function useGameSocket(): GameState {
     s.on("error", onErr);
 
     return () => {
+      s.off("connect", onConnect);
       s.off("lobby_update", onLobby);
       s.off("game_starting", onStarting);
       s.off("question", onQuestion);
@@ -140,6 +158,7 @@ export function useGameSocket(): GameState {
     const s = sockRef.current!;
     const ack: AckCreateRoom = await s.emitWithAck("create_room", { mode: m, name });
     if (ack.ok) {
+      sessionRef.current = { room_code: ack.room_code, player_id: ack.player_id };
       setRoomCode(ack.room_code);
       setMode(m);
       setSelfId(ack.player_id);
@@ -156,6 +175,7 @@ export function useGameSocket(): GameState {
     const s = sockRef.current!;
     const ack: AckJoinRoom = await s.emitWithAck("join_room", { room_code: code, name });
     if (ack.ok) {
+      sessionRef.current = { room_code: ack.room_code, player_id: ack.player_id };
       setRoomCode(ack.room_code);
       setMode("friends");
       setSelfId(ack.player_id);

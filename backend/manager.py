@@ -5,6 +5,7 @@ delegate to the manager so room/runner lifecycle stays in one place.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -82,6 +83,34 @@ class GameManager:
             "players": [p.to_public() for p in room.players.values()],
         }
 
+    async def rejoin_room(self, *, sid: str, room_code: str, player_id: str) -> dict:
+        """Rebind a new sid to an existing player after a transport reconnect.
+
+        Browsers behind proxies (Render, etc.) can drop the websocket and
+        reopen with a new sid. Without this hook every reconnect would lose
+        the player's membership.
+        """
+        room = self.rooms.get(room_code.upper())
+        if room is None:
+            raise RoomError("Room expired")
+        player = room.players.get(player_id)
+        if player is None:
+            raise RoomError("Player not found")
+        # Drop old sid link (if any) for this player.
+        old_sid = player.sid
+        if old_sid and old_sid != sid:
+            self.sid_links.pop(old_sid, None)
+        player.sid = sid
+        self.sid_links[sid] = SidLink(room_code=room.code, player_id=player_id)
+        await self.sio.enter_room(sid, room.code)
+        log.info("rejoin %s → room %s as %s", sid, room.code, player.name)
+        return {
+            "room_code": room.code,
+            "player_id": player_id,
+            "is_host": room.host_id == player_id,
+            "players": [p.to_public() for p in room.players.values()],
+        }
+
     async def start_game_by_host(self, sid: str) -> None:
         link = self._require_link(sid)
         room = self._require_room(link.room_code)
@@ -97,6 +126,23 @@ class GameManager:
         runner = GameRunner(self.sio, room)
         self.runners[code] = runner
         runner.start()
+        # Tear down room ~60s after the game ends so a player who stays on
+        # the leaderboard screen can still receive late events.
+        asyncio.create_task(self._cleanup_after(code, runner))
+
+    async def _cleanup_after(self, code: str, runner: GameRunner) -> None:
+        try:
+            if runner._main_task:
+                try:
+                    await runner._main_task
+                except Exception:
+                    pass
+            await asyncio.sleep(60)
+        finally:
+            self.runners.pop(code, None)
+            room = self.rooms.pop(code, None)
+            if room is not None:
+                log.info("cleaned up room %s", code)
 
     # --- Player actions --------------------------------------------------
 
@@ -130,32 +176,19 @@ class GameManager:
     # --- Disconnect ------------------------------------------------------
 
     async def handle_disconnect(self, sid: str) -> None:
+        """Clear sid binding but keep the player in the room so a reconnect
+        with a new sid can rejoin via `rejoin_room`. Cleanup of stale rooms
+        happens in `_cleanup_after` once the runner finishes."""
         link = self.sid_links.pop(sid, None)
         if link is None:
             return
         room = self.rooms.get(link.room_code)
         if room is None:
             return
-        room.remove_player(link.player_id)
-        if not any(not p.is_bot for p in room.players.values()):
-            # No humans left → tear down.
-            runner = self.runners.pop(room.code, None)
-            if runner:
-                runner.cancel()
-            self.rooms.pop(room.code, None)
-            log.info("torn down empty room %s", room.code)
-            return
-        if room.host_id == link.player_id:
-            new_host = next((p for p in room.players.values() if not p.is_bot), None)
-            room.host_id = new_host.id if new_host else None
-        await self.sio.emit(
-            "lobby_update",
-            {
-                "players": [p.to_public() for p in room.players.values()],
-                "host_id": room.host_id,
-            },
-            room=room.code,
-        )
+        player = room.players.get(link.player_id)
+        if player is not None and player.sid == sid:
+            player.sid = None
+        log.info("disconnect %s — kept player in room %s", sid, room.code)
 
     # --- Helpers ---------------------------------------------------------
 
