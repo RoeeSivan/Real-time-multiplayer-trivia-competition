@@ -308,7 +308,6 @@ Ordered roughly by value/cost.
 - [ ] **Record video** of full vs Friends game including all 3 helps + chat + change-answer feature.
 - [ ] **Upload zip to Moodle** as `assignment3-exercise2.zip` (exclude `.venv`, `node_modules`, `.next`, `.gstack`).
 - [ ] **Fill the submission Google Form** with the video links.
-- [ ] **Invite `dk8827` to the GitHub repo** (per assignment instructions — make sure the repo is private + invite sent).
 
 ---
 
