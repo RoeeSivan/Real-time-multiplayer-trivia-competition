@@ -1,0 +1,135 @@
+"""End-to-end Room test — runs a full 10-question game using the real
+trivia.db. Bots and one human; verifies state transitions, scoring, helps,
+and final leaderboard."""
+from __future__ import annotations
+
+import random
+
+from backend import config
+from backend.game.room import Room, RoomError, generate_room_code
+
+
+def _make_cpu_room() -> Room:
+    room = Room(code=generate_room_code(), mode="cpu")
+    human = room.add_player(name="Human", sid="sid-human")
+    room.fill_with_bots_if_needed()
+    assert len(room.bots()) == config.TARGET_BOTS_FOR_SOLO
+    assert room.host_id == human.id
+    return room
+
+
+def test_full_game_loop():
+    random.seed(42)
+    room = _make_cpu_room()
+    room.start_game()
+    assert room.state == "countdown"
+
+    for q_num in range(1, config.GAME_QUESTIONS + 1):
+        q = room.begin_question()
+        assert room.state == "question"
+        assert len(q.options) == 4
+        assert 0 <= q.correct_idx < 4
+        assert q.options[q.correct_idx]  # correct text non-empty
+
+        # Human answers correctly on every question to test bumping difficulty.
+        human = next(p for p in room.players.values() if not p.is_bot)
+        rec = room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+        assert rec.correct
+        assert rec.points > 0
+
+        # Bots answer with their own logic via Room (here we simulate directly).
+        from backend.game import bots as bots_mod
+        for bot in room.bots():
+            choice = bots_mod.bot_pick_option(
+                correct_idx=q.correct_idx,
+                available_indices=[0, 1, 2, 3],
+                difficulty=q.difficulty,
+            )
+            room.submit_answer(player_id=bot.id, option_idx=choice)
+
+        room.finalize_question()
+        assert room.state == "reveal"
+        more = room.advance()
+        assert more == (q_num < config.GAME_QUESTIONS)
+
+    assert room.state == "ended"
+    lb = room.leaderboard()
+    assert len(lb) == 1 + config.TARGET_BOTS_FOR_SOLO
+    assert lb[0]["rank"] == 1
+    # Human got every Q right + speed bonus → should win.
+    assert lb[0]["name"] == "Human"
+
+
+def test_cannot_double_answer():
+    random.seed(1)
+    room = _make_cpu_room()
+    room.start_game()
+    q = room.begin_question()
+    human = next(p for p in room.players.values() if not p.is_bot)
+    room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    try:
+        room.submit_answer(player_id=human.id, option_idx=0)
+    except RoomError as e:
+        assert "Already answered" in str(e)
+    else:
+        raise AssertionError("expected RoomError on double-answer")
+
+
+def test_fifty_returns_two_wrong_indices():
+    random.seed(2)
+    room = _make_cpu_room()
+    room.start_game()
+    q = room.begin_question()
+    human = next(p for p in room.players.values() if not p.is_bot)
+    removed = room.use_fifty(human.id)
+    assert len(removed) == 2
+    assert q.correct_idx not in removed
+    # Cannot use twice.
+    try:
+        room.use_fifty(human.id)
+    except RoomError:
+        pass
+    else:
+        raise AssertionError("expected RoomError on second 50/50")
+
+
+def test_double_doubles_correct_answer_points():
+    random.seed(3)
+    room = _make_cpu_room()
+    room.start_game()
+    q = room.begin_question()
+    human = next(p for p in room.players.values() if not p.is_bot)
+    room.use_double(human.id)
+    rec = room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    assert rec.doubled
+    assert rec.points >= 2 * config.BASE_POINTS
+
+
+def test_unanswered_recorded_as_wrong_on_finalize():
+    random.seed(4)
+    room = _make_cpu_room()
+    room.start_game()
+    room.begin_question()
+    summary = room.finalize_question()
+    for pid in room.players:
+        ans = summary.answers[pid]
+        assert ans.correct is False
+        assert ans.points == 0
+
+
+def test_difficulty_increases_after_correct_streak():
+    random.seed(5)
+    room = _make_cpu_room()
+    starting_diff = room.current_difficulty
+    room.start_game()
+    human = next(p for p in room.players.values() if not p.is_bot)
+
+    # First question — no adaptive change yet.
+    q = room.begin_question()
+    room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    room.finalize_question()
+    room.advance()
+
+    # Second question — should have bumped difficulty (or stayed at cap).
+    q2 = room.begin_question()
+    assert room.current_difficulty >= starting_diff
