@@ -199,8 +199,121 @@ python -m pytest backend/tests/ -v
 - Constants live in `config.py` / `tailwind.config.ts`. No magic numbers in logic files.
 - No dead code (Scoreboard / RevealPanel removed when their feature was dropped).
 
-## Open / nice-to-haves
+## Live URLs
+
+- **Play** (frontend): https://trivia-frontend-laro.onrender.com
+- **API** (backend, internal): https://trivia-backend-ze83.onrender.com
+
+Free tier: backend sleeps after 15 min idle → first hit takes ~30s while the dyno wakes.
+
+---
+
+## Manual QA — your turn
+
+The automated /qa pass on production confirmed the basics work. Before the
+demo video / submission, walk through everything by hand. Open the live URL
+and tick each item.
+
+### A. Solo (vs Computer)
+- [ ] Home loads on https://trivia-frontend-laro.onrender.com — both cards visible.
+- [ ] Click **vs Computer** → name form appears.
+- [ ] Empty name → Start button stays disabled.
+- [ ] Type a name → Start enables → game launches with 3 bots in the player list.
+- [ ] Countdown shows 3 → 2 → 1 → GO!
+- [ ] Q1 displays question text + 4 options + 15s timer + difficulty badge.
+- [ ] Click an option → its border highlights, "Selected A. You can still change your answer..." appears.
+- [ ] Click a different option → first highlight clears, new one highlights. (just-shipped)
+- [ ] Wait for timer to hit 0 → personal feedback card shows ✓/✗ + your points.
+- [ ] No public scoreboard during the round (only own score chip + player list).
+- [ ] Difficulty bumps up after a correct answer; drops after a wrong streak.
+- [ ] Bots answer at varied times (some quick, some near the end).
+- [ ] All 10 questions complete → final leaderboard with medals + winner banner.
+- [ ] **Play again** button returns to the mode picker.
+
+### B. Helps (during a CPU game)
+- [ ] **50/50** — click once → 2 wrong options gray out / strike through. Button disables (one-shot).
+- [ ] **Call a Friend** — click → modal with 1-2 sentence advice. Close modal → game continues.
+  - If `OPENAI_API_KEY` is set on Render: real witty hint.
+  - If missing: canned fallback line ("Bob shrugs..."). Either is OK.
+- [ ] **Double Score** — click before answering → "Double Score armed" hint. If you then answer correctly the points round shows `2×`.
+- [ ] Each help is one-shot per game (button stays disabled after use).
+- [ ] Activate Double *after* tentatively answering correctly → final reveal shows 2× anyway.
+
+### C. Multiplayer (vs Friends)
+- [ ] Mac browser → **vs Friends** → name → QR + lobby render. Code visible (e.g. "VO8SY").
+- [ ] iPhone (same Wi-Fi or anywhere on internet — Render is public) → camera → scan QR.
+- [ ] iPhone lands on `/join/<CODE>` → name form → Join.
+- [ ] Mac lobby updates: now shows host + iPhone player.
+- [ ] Mac → **Start Game** → both screens enter countdown together.
+- [ ] Both screens show same question + same difficulty.
+- [ ] Each player only sees own ✓/✗ between rounds.
+- [ ] Final leaderboard ranks both players + (if any) bots correctly.
+
+### D. Chat
+- [ ] Type a message → enter → both screens see it with sender name.
+- [ ] Tap an emoji from the quick bar → both screens see it.
+- [ ] Long messages truncate at 200 chars.
+
+### E. Resilience
+- [ ] On the iPhone, lock screen for 5s during a question → unlock → game still in sync (rejoin works).
+- [ ] Force-close iPhone Safari mid-game → reopen URL → does NOT auto-rejoin (intentional — fresh load = fresh game).
+- [ ] Two simultaneous CPU games on Mac + iPhone (different rooms) → no crosstalk.
+
+### F. Cold-start (free tier)
+- [ ] Wait 16+ minutes after last play → click Start → Connecting… visible for ~30s → game eventually loads.
+  - Note: this is expected free-tier behavior. ISSUE-003 in the QA report.
+
+### G. Submission readiness
+- [ ] Record a screen capture of a full vs Friends game (host + phone visible) ~3 min.
+- [ ] Make sure call-a-friend modal is shown in the recording (cool factor).
+- [ ] Demo the change-answer feature on camera (click A, then change to C).
+
+If anything fails: paste the screenshot + steps and we'll triage.
+
+---
+
+## Backlog (next things to ship)
+
+Ordered roughly by value/cost.
+
+### Quick wins
+- [ ] **Cold-start hint** (ISSUE-003) — frontend detects connect taking >5s and shows "Backend is waking up — this can take up to 30 seconds on free hosting." Soften the worst free-tier UX moment.
+- [ ] **Cron pinger** — free job (cron-job.org) hits `/health` every 14 min to keep backend warm. Eliminates ISSUE-003 entirely.
+- [ ] **Restart-room button** on leaderboard — instead of navigating back to `/`, kick a fresh round with the same players.
+- [ ] **Confetti on win** — `canvas-confetti` ~5 KB. Pure UI delight.
+- [ ] **Title contrast** (ISSUE-002) — bump title legibility on home (drop-shadow or solid color + accent underline).
+
+### Polish
+- [ ] **Sound on/off** toggle — current WebAudio cue is on by default; some demos want silence.
+- [ ] **Keyboard shortcuts** — `1/2/3/4` to answer, `H` for help menu. Power-user touch.
+- [ ] **Avatar / color per player** — random emoji or initials chip so the lobby/leaderboard feels more alive.
+- [ ] **Per-question score breakdown** — show last round's points awarded as a flying "+750" near the score chip.
+- [ ] **Animated correct-answer reveal** — flash green on correct option after the round (private).
+
+### Real features
+- [ ] **Hall of Fame** `/api/games` endpoint + a `/hall-of-fame` page reading the `games` + `game_players` tables. Rank by lifetime score across all games.
+- [ ] **Persistent game history on Render** — `trivia.db` is currently ephemeral on free tier. Either attach a Render Persistent Disk ($1/mo) or migrate `games` + `game_players` to Neon Postgres (free).
+- [ ] **Reconnect grace period config** — currently rooms tear down 60s after game end. Make it configurable; expose a "Game ended — leaderboard available for X minutes" hint.
+- [ ] **Per-player help loadouts** — let host choose which 3 helps the room uses (e.g. swap 50/50 for a 5-second time freeze).
+- [ ] **Question categories** — tag questions in DB (history/science/sports/etc.) and let host filter.
+
+### Hardening
+- [ ] **Tighten CORS allowlist** — currently `FRONTEND_URL` is set on Render. Verify dev fallback (`*`) only triggers when the env var is unset.
+- [ ] **Rate-limit `chat` events** — currently 1/event from frontend; server should also throttle (e.g. 5/sec/sid) to prevent spam.
+- [ ] **Validate `name` server-side for profanity** — optional, only matters if hosted publicly.
+- [ ] **Disconnect-mid-game UX** — if a friend's phone drops permanently, host's lobby should show them as "(disconnected)" rather than just frozen at last-known score.
+- [ ] **Replace deprecated `websockets.legacy`** warning surfaced by tests. Pin a non-deprecated path.
+
+### Demo / submission
+- [ ] **Record video** of full vs Friends game including all 3 helps + chat + change-answer feature.
+- [ ] **Upload zip to Moodle** as `assignment3-exercise2.zip` (exclude `.venv`, `node_modules`, `.next`, `.gstack`).
+- [ ] **Fill the submission Google Form** with the video links.
+- [ ] **Invite `dk8827` to the GitHub repo** (per assignment instructions — make sure the repo is private + invite sent).
+
+---
+
+## Open / nice-to-haves (legacy — see Backlog above for prioritised list)
 
 - Hall-of-Fame `/api/games` endpoint reading from `games` table.
 - Confetti on win.
-- Restart-room button on the leaderboard screen (currently navigate to `/`).
+- Restart-room button on the leaderboard screen.
