@@ -173,14 +173,18 @@ class Room:
         return q
 
     def submit_answer(self, *, player_id: str, option_idx: int) -> AnswerRecord:
+        """Record (or overwrite) a player's choice for the current question.
+
+        Players may change their answer freely until the timer ends. The
+        score is NOT applied to player.score here — it is applied once in
+        `finalize_question` so re-submissions don't double-count.
+        """
         if self.state != "question":
             raise RoomError("Not accepting answers right now")
         if self.current_question is None or self.current_summary is None:
             raise RoomError("No active question")
         if player_id not in self.players:
             raise RoomError("Unknown player")
-        if player_id in self.current_summary.answers:
-            raise RoomError("Already answered")
         if not (0 <= option_idx < 4):
             raise RoomError("Invalid option index")
 
@@ -195,7 +199,6 @@ class Room:
             time_limit=float(config.QUESTION_TIME),
             doubled=doubled,
         )
-        player.score += points
 
         rec = AnswerRecord(
             player_id=player_id,
@@ -205,11 +208,12 @@ class Room:
             doubled=doubled,
             points=points,
         )
-        self.current_summary.answers[player_id] = rec
+        self.current_summary.answers[player_id] = rec  # overwrite OK
         return rec
 
     def finalize_question(self) -> QuestionSummary:
-        """Mark unanswered as wrong and transition to REVEAL."""
+        """Apply scores from the final answer of each player, mark unanswered
+        as wrong, and transition to REVEAL."""
         if self.state != "question":
             raise RoomError("Not in question state")
         assert self.current_question is not None
@@ -226,6 +230,9 @@ class Room:
                 doubled=False,
                 points=0,
             )
+        # Apply scores once, using each player's *final* answer.
+        for pid, ans in self.current_summary.answers.items():
+            self.players[pid].score += ans.points
         self.state = "reveal"
         self.history.append(self.current_summary)
         return self.current_summary
@@ -262,10 +269,20 @@ class Room:
             raise RoomError("Double already used")
         if self.state != "question":
             raise RoomError("Double only during a question")
-        if player_id in (self.current_summary.answers if self.current_summary else {}):
-            raise RoomError("Already answered this question")
         p.help_double_used = True
         p.double_armed = True
+        # If the player already submitted, retro-apply doubling to the stored
+        # record so finalize_question awards 2× when correct.
+        if self.current_summary is not None:
+            existing = self.current_summary.answers.get(player_id)
+            if existing is not None and existing.correct and not existing.doubled:
+                existing.doubled = True
+                existing.points = compute_points(
+                    correct=True,
+                    elapsed=existing.elapsed,
+                    time_limit=float(config.QUESTION_TIME),
+                    doubled=True,
+                )
 
     def mark_friend_used(self, player_id: str) -> None:
         p = self._require_player(player_id)

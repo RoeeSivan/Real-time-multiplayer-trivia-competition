@@ -60,19 +60,30 @@ def test_full_game_loop():
     assert lb[0]["name"] == "Human"
 
 
-def test_cannot_double_answer():
+def test_can_change_answer_until_finalize():
+    """Players may overwrite their answer freely until the timer ends.
+    Score is only applied once, using the LAST submission."""
     random.seed(1)
     room = _make_cpu_room()
     room.start_game()
     q = room.begin_question()
     human = next(p for p in room.players.values() if not p.is_bot)
-    room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
-    try:
-        room.submit_answer(player_id=human.id, option_idx=0)
-    except RoomError as e:
-        assert "Already answered" in str(e)
-    else:
-        raise AssertionError("expected RoomError on double-answer")
+
+    wrong_idx = (q.correct_idx + 1) % 4
+    score_before = human.score
+
+    # Submit wrong, then change to correct.
+    rec_wrong = room.submit_answer(player_id=human.id, option_idx=wrong_idx)
+    assert rec_wrong.correct is False
+    rec_correct = room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    assert rec_correct.correct is True
+
+    # Score must NOT update at submit time — only at finalize.
+    assert human.score == score_before
+
+    # Finalize → only the final correct answer scores.
+    room.finalize_question()
+    assert human.score == score_before + rec_correct.points
 
 
 def test_fifty_returns_two_wrong_indices():

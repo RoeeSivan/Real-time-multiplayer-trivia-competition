@@ -196,7 +196,10 @@ export function useGameSocket(): GameState {
 
   const submitAnswer = useCallback(
     async (optionIdx: number) => {
-      if (!question || answeredIdx !== null) return;
+      if (!question) return;
+      // Skip server round-trip if the player taps the same option twice.
+      if (answeredIdx === optionIdx) return;
+      const previous = answeredIdx;
       setAnsweredIdx(optionIdx);
       const s = sockRef.current!;
       const ack = await s.emitWithAck("submit_answer", {
@@ -205,7 +208,7 @@ export function useGameSocket(): GameState {
       });
       if (!ack?.ok) {
         setErrorMsg(ack?.error || "Answer rejected");
-        setAnsweredIdx(null);
+        setAnsweredIdx(previous);
       }
     },
     [question, answeredIdx],

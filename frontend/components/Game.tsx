@@ -65,7 +65,7 @@ export default function Game({ game }: Props) {
                 <Helps
                   used={game.helpsUsed}
                   doubled={game.doubled}
-                  disabled={game.answeredIdx !== null || game.phase === "feedback"}
+                  disabled={game.phase === "feedback"}
                   onUse={(t) => game.useHelp(t)}
                 />
                 <div className="text-sm text-muted">

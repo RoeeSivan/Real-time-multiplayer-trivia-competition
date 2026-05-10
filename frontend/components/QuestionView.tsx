@@ -60,9 +60,9 @@ export default function QuestionView({
           return (
             <motion.button
               key={i}
-              whileTap={!showResult && answeredIdx === null ? { scale: 0.97 } : undefined}
+              whileTap={!showResult ? { scale: 0.97 } : undefined}
               onClick={() => onAnswer(i)}
-              disabled={showResult || answeredIdx !== null || removed}
+              disabled={showResult || removed}
               className={`text-left p-4 rounded-xl border-2 transition ${cls}`}
             >
               <div className="flex items-start gap-3">
@@ -84,7 +84,7 @@ export default function QuestionView({
 
       {answeredIdx !== null && !showResult && (
         <div className="mt-4 text-center text-muted text-sm">
-          Locked in. Waiting for the round to end…
+          Selected <span className="text-accent">{LETTERS[answeredIdx]}</span>. You can still change your answer until time runs out.
         </div>
       )}
     </div>
