@@ -9,6 +9,7 @@ endpoint is available at the same host:port (default path /socket.io).
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 import socketio
 from dotenv import load_dotenv
@@ -26,11 +27,19 @@ log = logging.getLogger("trivia.main")
 
 
 # --- FastAPI ---
-fastapi_app = FastAPI(title="Trivia Multiplayer API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db.init_schema()
+    log.info("Schema initialised. Question bank: %d rows.", db.count_questions())
+    yield
+
+
+fastapi_app = FastAPI(title="Trivia Multiplayer API", version="0.1.0", lifespan=lifespan)
 
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # Tightened later if deployed
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,12 +49,6 @@ fastapi_app.add_middleware(
 @fastapi_app.get("/health")
 def health() -> dict[str, object]:
     return {"ok": True, "questions": db.count_questions()}
-
-
-@fastapi_app.on_event("startup")
-def on_startup() -> None:
-    db.init_schema()
-    log.info("Schema initialised. Question bank: %d rows.", db.count_questions())
 
 
 # --- Socket.IO ---
