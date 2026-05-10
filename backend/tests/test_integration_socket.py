@@ -68,7 +68,7 @@ async def test_full_cpu_game_via_socket(patched_config):
         raise RuntimeError("server did not start")
 
     received: dict[str, list] = {
-        "question": [], "reveal": [], "game_over": [],
+        "question": [], "round_end": [], "answer_result": [], "game_over": [],
         "answer_received": [], "game_starting": [],
     }
     sio = socketio.AsyncClient()
@@ -103,7 +103,8 @@ async def test_full_cpu_game_via_socket(patched_config):
         await sio.disconnect()
 
         assert len(received["question"]) == 10
-        assert len(received["reveal"]) == 10
+        assert len(received["round_end"]) == 10
+        assert len(received["answer_result"]) == 10  # private, one per round for the human
         assert len(received["game_over"]) == 1
         lb = received["game_over"][0]["leaderboard"]
         assert len(lb) == 4

@@ -9,6 +9,7 @@ endpoint is available at the same host:port (default path /socket.io).
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import socketio
@@ -37,9 +38,22 @@ async def lifespan(_app: FastAPI):
 
 fastapi_app = FastAPI(title="Trivia Multiplayer API", version="0.1.0", lifespan=lifespan)
 
+# CORS / Socket.IO origins.
+# - In dev (no FRONTEND_URL set): allow everything for easy LAN testing.
+# - In prod: comma-separated list of origins via FRONTEND_URL, e.g.
+#       FRONTEND_URL=https://trivia.example.com,https://staging.example.com
+def _allowed_origins() -> list[str] | str:
+    raw = os.getenv("FRONTEND_URL", "").strip()
+    if not raw:
+        return "*"
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+
+
+_origins = _allowed_origins()
+
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins if isinstance(_origins, list) else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,7 +66,7 @@ def health() -> dict[str, object]:
 
 
 # --- Socket.IO ---
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=_origins)
 
 # Register event handlers (imported for side effects).
 from backend import socket_handlers  # noqa: E402, F401

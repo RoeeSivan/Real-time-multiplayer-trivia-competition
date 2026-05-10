@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background: radial-gradient(circle at 20% 0%, #2a1247 0%, #0b0b14 55%);
+  color: #f3f3ff;
+  min-height: 100vh;
+  font-family: ui-sans-serif, system-ui, "Inter", "Segoe UI", Helvetica, sans-serif;
+}
+
+button { transition: transform 80ms ease, background 80ms ease; }
+button:active:not(:disabled) { transform: scale(0.97); }
+
+.glass {
+  background: rgba(22, 22, 41, 0.65);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.06);
+}

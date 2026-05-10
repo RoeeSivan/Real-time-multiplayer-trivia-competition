@@ -49,7 +49,6 @@ class GameManager:
         log.info("created room %s mode=%s host=%s", code, mode, name)
 
         if mode == "cpu":
-            room.fill_with_bots_if_needed()
             await self._start(code)
 
         return {
@@ -92,6 +91,8 @@ class GameManager:
 
     async def _start(self, code: str) -> None:
         room = self._require_room(code)
+        # PDF: 1-3 bots when only one human is in the game. Apply to any mode.
+        room.fill_with_bots_if_needed()
         room.start_game()
         runner = GameRunner(self.sio, room)
         self.runners[code] = runner
@@ -109,7 +110,6 @@ class GameManager:
         await self.sio.emit(
             "answer_received", {"player_id": link.player_id}, room=room.code
         )
-        runner.notify_answer_received()
 
     def get_room_for_sid(self, sid: str) -> tuple[Room, str]:
         link = self._require_link(sid)

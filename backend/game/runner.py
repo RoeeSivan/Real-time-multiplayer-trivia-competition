@@ -27,7 +27,6 @@ class GameRunner:
     def __init__(self, sio: "socketio.AsyncServer", room: Room) -> None:
         self.sio = sio
         self.room = room
-        self.all_answered = asyncio.Event()
         self._main_task: asyncio.Task | None = None
         self._bot_tasks: list[asyncio.Task] = []
 
@@ -44,14 +43,6 @@ class GameRunner:
         for t in self._bot_tasks:
             t.cancel()
 
-    def notify_answer_received(self) -> None:
-        """Called by socket handler after each submit_answer. Releases the
-        QUESTION phase early if every player has now answered."""
-        if self.room.current_summary is None:
-            return
-        if len(self.room.current_summary.answers) >= len(self.room.players):
-            self.all_answered.set()
-
     # --- Loop ------------------------------------------------------------
 
     async def _run(self) -> None:
@@ -62,7 +53,8 @@ class GameRunner:
                 await self._broadcast_question(q)
                 await self._question_phase(q)
                 summary = self.room.finalize_question()
-                await self._broadcast_reveal(summary)
+                await self._send_private_results(summary)
+                await self._broadcast_round_end()
                 await asyncio.sleep(config.REVEAL_TIME)
                 more = self.room.advance()
                 if not more:
@@ -80,16 +72,14 @@ class GameRunner:
         await asyncio.sleep(config.START_COUNTDOWN)
 
     async def _question_phase(self, q: ActiveQuestion) -> None:
-        self.all_answered.clear()
+        """Runs the question for the full QUESTION_TIME — no early exit."""
         self._cancel_bot_tasks()
         for bot in self.room.bots():
             self._bot_tasks.append(
                 asyncio.create_task(self._bot_answer(bot.id, q), name=f"bot-{bot.id}")
             )
         try:
-            await asyncio.wait_for(self.all_answered.wait(), timeout=config.QUESTION_TIME)
-        except asyncio.TimeoutError:
-            pass
+            await asyncio.sleep(config.QUESTION_TIME)
         finally:
             self._cancel_bot_tasks()
 
@@ -114,7 +104,6 @@ class GameRunner:
                 log.debug("[%s] bot %s submit ignored: %s", self.room.code, bot_id, e)
                 return
             await self._emit("answer_received", {"player_id": bot_id})
-            self.notify_answer_received()
         except asyncio.CancelledError:
             pass
 
@@ -132,22 +121,34 @@ class GameRunner:
             },
         )
 
-    async def _broadcast_reveal(self, summary) -> None:  # type: ignore[no-untyped-def]
-        per_player = []
-        for pid, ans in summary.answers.items():
-            per_player.append({
-                "player_id": pid,
-                "option_idx": ans.option_idx,
-                "correct": ans.correct,
-                "elapsed": round(ans.elapsed, 2),
-                "doubled": ans.doubled,
-                "points": ans.points,
-            })
-        await self._emit("reveal", {
-            "correct_idx": summary.correct_idx,
-            "per_player": per_player,
-            "scores": [p.to_public() for p in self.room.players.values()],
-        })
+    async def _send_private_results(self, summary) -> None:  # type: ignore[no-untyped-def]
+        """Emit each player's own result only to that player's sid."""
+        for player in self.room.players.values():
+            if player.is_bot or not player.sid:
+                continue
+            ans = summary.answers.get(player.id)
+            if ans is None:
+                continue
+            await self.sio.emit(
+                "answer_result",
+                {
+                    "question_idx": self.room.questions_asked - 1,
+                    "your_choice": ans.option_idx,
+                    "correct": ans.correct,
+                    "correct_idx": summary.correct_idx,
+                    "doubled": ans.doubled,
+                    "points": ans.points,
+                    "your_score": player.score,
+                },
+                to=player.sid,
+            )
+
+    async def _broadcast_round_end(self) -> None:
+        """Public marker that the round closed. No correctness or scores."""
+        await self._emit(
+            "round_end",
+            {"idx": self.room.questions_asked - 1},
+        )
 
     async def _finish(self) -> None:
         winner = self.room.winner_name()
