@@ -24,10 +24,14 @@ _FALLBACK_LINES = (
 )
 
 SYSTEM_PROMPT = (
-    "You are a fun, witty 'phone-a-friend' helper in a trivia game. "
-    "Given a question and 4 options, give playful advice in 1-2 short sentences. "
-    "Hint at the answer but stay uncertain — sometimes be confidently wrong, "
-    "sometimes right. Never reveal you are an AI. Keep it under 200 chars."
+    "You are a witty phone-a-friend helper in a trivia game. The user will give "
+    "you a question, 4 options, and the correct answer. Your job: write a SHORT "
+    "(1-2 sentences, under 200 chars) playful hint that leads the player toward "
+    "the correct option WITHOUT naming it or quoting it verbatim. Use indirect "
+    "clues — historical context, category, a memorable fact, a process-of-"
+    "elimination nudge, or a playful aside. Stay in character as a friend on "
+    "the phone. Never reveal you are an AI. Never explicitly say 'the answer "
+    "is X'."
 )
 
 
@@ -53,7 +57,12 @@ def _get_agent() -> Agent | None:
     return _agent
 
 
-async def call_a_friend(*, question: str, options: list[str]) -> str:
+async def call_a_friend(
+    *,
+    question: str,
+    options: list[str],
+    correct_option: str,
+) -> str:
     """Return a short witty hint string. Never raises."""
     agent = _get_agent()
     if agent is None:
@@ -63,7 +72,9 @@ async def call_a_friend(*, question: str, options: list[str]) -> str:
         f"Question: {question}\n"
         f"Options:\n"
         + "\n".join(f"  {i + 1}. {opt}" for i, opt in enumerate(options))
-        + "\n\nGive your fun take in 1-2 sentences."
+        + f"\n\nCorrect answer: {correct_option}\n\n"
+        "Give your hint now — lead them toward the correct option without "
+        "naming it."
     )
     try:
         result = await asyncio.wait_for(agent.run(prompt), timeout=config.LLM_TIMEOUT_SECONDS)

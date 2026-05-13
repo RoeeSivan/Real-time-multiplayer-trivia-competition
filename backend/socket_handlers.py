@@ -130,9 +130,11 @@ def register(sio: socketio.AsyncServer) -> None:
             # friend — call LLM, mark used only if call succeeds (it always returns a string)
             if room.current_question is None:
                 return _ack("Call-a-friend only during a question")
+            q = room.current_question
             advice = await llm.call_a_friend(
-                question=room.current_question.text,
-                options=room.current_question.options,
+                question=q.text,
+                options=q.options,
+                correct_option=q.options[q.correct_idx],
             )
             room.mark_friend_used(player_id)
             return _ack(None, type="friend", advice=advice)
