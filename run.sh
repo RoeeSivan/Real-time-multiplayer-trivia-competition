@@ -123,7 +123,8 @@ for t in json.load(sys.stdin).get('tunnels',[]):
   log "waiting for cloudflared to allocate URL (can take 5–15s)…"
   FRONTEND_URL_TUN=""
   for _ in $(seq 1 60); do
-    FRONTEND_URL_TUN=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' .cloudflared.log | head -1)
+    # `|| true` swallows grep's exit-1 on no-match so set -e + pipefail don't abort.
+    FRONTEND_URL_TUN=$( { grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' .cloudflared.log || true; } | head -1)
     [[ -n "$FRONTEND_URL_TUN" ]] && break
     sleep 0.5
   done
@@ -193,9 +194,9 @@ if [[ $MODE == "tunnel" ]]; then
   (
     sleep 4
     if command -v open >/dev/null 2>&1; then
-      open "$FRONTEND_URL_TUN/host" >/dev/null 2>&1 || true
+      open "$FRONTEND_URL_TUN/" >/dev/null 2>&1 || true
     elif command -v xdg-open >/dev/null 2>&1; then
-      xdg-open "$FRONTEND_URL_TUN/host" >/dev/null 2>&1 || true
+      xdg-open "$FRONTEND_URL_TUN/" >/dev/null 2>&1 || true
     fi
   ) &
 fi
