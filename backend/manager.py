@@ -30,6 +30,9 @@ class GameManager:
         self.rooms: dict[str, Room] = {}
         self.runners: dict[str, GameRunner] = {}
         self.sid_links: dict[str, SidLink] = {}
+        # Per-room cleanup task. Restarting a game must cancel the pending
+        # cleanup so the new runner isn't torn down 60s into the next match.
+        self.cleanup_tasks: dict[str, asyncio.Task] = {}
 
     # --- Room lifecycle --------------------------------------------------
 
@@ -118,6 +121,29 @@ class GameManager:
             raise RoomError("Only host can start")
         await self._start(room.code)
 
+    async def restart_game_by_host(self, sid: str) -> None:
+        link = self._require_link(sid)
+        room = self._require_room(link.room_code)
+        if room.host_id != link.player_id:
+            raise RoomError("Only host can restart")
+        if room.state != "ended":
+            raise RoomError("Game still running")
+        # Cancel the pending cleanup so the room survives.
+        pending = self.cleanup_tasks.pop(room.code, None)
+        if pending is not None and not pending.done():
+            pending.cancel()
+        self.runners.pop(room.code, None)
+        room.reset_for_replay()
+        await self.sio.emit(
+            "lobby_update",
+            {
+                "players": [p.to_public() for p in room.players.values()],
+                "host_id": room.host_id,
+            },
+            room=room.code,
+        )
+        await self._start(room.code)
+
     async def _start(self, code: str) -> None:
         room = self._require_room(code)
         # PDF: 1-3 bots when only one human is in the game. Apply to any mode.
@@ -127,8 +153,11 @@ class GameManager:
         self.runners[code] = runner
         runner.start()
         # Tear down room ~60s after the game ends so a player who stays on
-        # the leaderboard screen can still receive late events.
-        asyncio.create_task(self._cleanup_after(code, runner))
+        # the leaderboard screen can still receive late events. Track the
+        # task so restart_game_by_host can cancel it.
+        self.cleanup_tasks[code] = asyncio.create_task(
+            self._cleanup_after(code, runner)
+        )
 
     async def _cleanup_after(self, code: str, runner: GameRunner) -> None:
         try:
@@ -138,11 +167,17 @@ class GameManager:
                 except Exception:
                     pass
             await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            return
         finally:
-            self.runners.pop(code, None)
-            room = self.rooms.pop(code, None)
-            if room is not None:
-                log.info("cleaned up room %s", code)
+            self.cleanup_tasks.pop(code, None)
+            # If the current runner for this code isn't ours, a restart
+            # already swapped it in — leave the new runner + room alone.
+            if self.runners.get(code) is runner:
+                self.runners.pop(code, None)
+                room = self.rooms.pop(code, None)
+                if room is not None:
+                    log.info("cleaned up room %s", code)
 
     # --- Player actions --------------------------------------------------
 

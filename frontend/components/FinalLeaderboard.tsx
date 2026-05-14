@@ -8,11 +8,19 @@ interface Props {
   leaderboard: PublicPlayer[];
   winner: string | null;
   selfId: string | null;
+  isHost: boolean;
+  onRestart: () => void;
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-export default function FinalLeaderboard({ leaderboard, winner, selfId }: Props) {
+export default function FinalLeaderboard({
+  leaderboard,
+  winner,
+  selfId,
+  isHost,
+  onRestart,
+}: Props) {
   return (
     <div className="w-full max-w-xl mx-auto text-center">
       <motion.h1
@@ -46,12 +54,19 @@ export default function FinalLeaderboard({ leaderboard, winner, selfId }: Props)
         ))}
       </ul>
 
-      <div className="flex gap-3 justify-center">
-        <Link
-          href="/"
-          className="px-5 py-2.5 bg-gradient-to-r from-accent to-accent2 rounded-xl font-semibold"
-        >
-          Play again
+      <div className="flex flex-col items-center gap-3">
+        {isHost ? (
+          <button
+            onClick={onRestart}
+            className="px-5 py-2.5 bg-gradient-to-r from-accent to-accent2 rounded-xl font-semibold"
+          >
+            Play again (same room)
+          </button>
+        ) : (
+          <p className="text-muted text-sm">Waiting for host to start a new game…</p>
+        )}
+        <Link href="/" className="text-sm text-muted underline">
+          Back to home
         </Link>
       </div>
     </div>

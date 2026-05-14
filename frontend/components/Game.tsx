@@ -42,6 +42,8 @@ export default function Game({ game }: Props) {
           leaderboard={game.finalLeaderboard}
           winner={game.winner}
           selfId={game.selfId}
+          isHost={game.isHost}
+          onRestart={game.restartGame}
         />
       </main>
     );

@@ -106,6 +106,17 @@ def register(sio: socketio.AsyncServer) -> None:
             return _ack(str(e))
 
     @sio.event
+    async def restart_game(sid: str, _data: dict | None = None) -> dict:
+        try:
+            await mgr.restart_game_by_host(sid)
+            return _ack(None)
+        except RoomError as e:
+            return _ack(str(e))
+        except Exception as e:  # pragma: no cover
+            log.exception("restart_game")
+            return _ack(f"server error: {e}")
+
+    @sio.event
     async def submit_answer(sid: str, data: dict | None) -> dict:
         try:
             payload = models.SubmitAnswerIn.model_validate(data or {})

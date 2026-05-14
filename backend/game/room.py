@@ -125,6 +125,34 @@ class Room:
         self.started_at = datetime.now(timezone.utc)
         log.info("[%s] starting game with %d players", self.code, len(self.players))
 
+    def reset_for_replay(self) -> None:
+        """Wipe game state so the same room can run another match.
+
+        Only valid after a game has ended. Keeps human players + host, drops
+        bots so `fill_with_bots_if_needed` repopulates with a fresh pool.
+        """
+        if self.state != "ended":
+            raise RoomError("Can only restart after a game ends")
+        bot_ids = [pid for pid, p in self.players.items() if p.is_bot]
+        for pid in bot_ids:
+            self.players.pop(pid, None)
+        for p in self.players.values():
+            p.score = 0
+            p.help_fifty_used = False
+            p.help_friend_used = False
+            p.help_double_used = False
+            p.double_armed = False
+        self.state = "lobby"
+        self.used_rowids.clear()
+        self.current_question = None
+        self.current_summary = None
+        self.questions_asked = 0
+        self.current_difficulty = config.DEFAULT_START_DIFFICULTY
+        self.started_at = None
+        self.ended_at = None
+        self.history.clear()
+        log.info("[%s] reset for replay", self.code)
+
     def begin_question(self) -> ActiveQuestion:
         """Load the next question and transition to QUESTION state."""
         if self.state not in ("countdown", "reveal"):

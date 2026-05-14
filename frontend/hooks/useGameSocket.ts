@@ -46,6 +46,7 @@ export interface GameState {
   createRoom: (mode: Mode, name: string) => Promise<AckCreateRoom>;
   joinRoom: (code: string, name: string) => Promise<AckJoinRoom>;
   startGame: () => Promise<void>;
+  restartGame: () => Promise<void>;
   submitAnswer: (optionIdx: number) => Promise<void>;
   useHelp: (type: "fifty" | "friend" | "double") => Promise<HelpResult | null>;
   sendChat: (text: string) => void;
@@ -106,6 +107,17 @@ export function useGameSocket(): GameState {
     const onStarting = (d: GameStartingEvt) => {
       setPhase("countdown");
       setCountdown(d.countdown_seconds);
+      // Wipe carry-over from a previous match (restart-room flow).
+      setQuestion(null);
+      setMyResult(null);
+      setMyScore(0);
+      setFinalLeaderboard(null);
+      setWinner(null);
+      setAnsweredIdx(null);
+      setFiftyRemoved([]);
+      setDoubled(false);
+      setHelpsUsed({ fifty: false, friend: false, double: false });
+      setFriendAdvice(null);
     };
     const onQuestion = (d: QuestionEvt) => {
       setPhase("question");
@@ -194,6 +206,12 @@ export function useGameSocket(): GameState {
     if (!ack?.ok) setErrorMsg(ack?.error || "Failed to start");
   }, []);
 
+  const restartGame = useCallback(async () => {
+    const s = sockRef.current!;
+    const ack = await s.emitWithAck("restart_game", {});
+    if (!ack?.ok) setErrorMsg(ack?.error || "Failed to restart");
+  }, []);
+
   const submitAnswer = useCallback(
     async (optionIdx: number) => {
       if (!question) return;
@@ -269,6 +287,7 @@ export function useGameSocket(): GameState {
     createRoom,
     joinRoom,
     startGame,
+    restartGame,
     submitAnswer,
     useHelp,
     sendChat,
