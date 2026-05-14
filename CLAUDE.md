@@ -14,8 +14,9 @@ Real-time multiplayer trivia per Assignment #3, Exercise 2. Two modes:
 
 No 24/7 cloud hosting. Game runs from a laptop and is exposed via two ngrok tunnels.
 
-- **Backend** — reserved free static domain (e.g. `https://trivia-be.ngrok-free.app`). Stable across restarts because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time.
-- **Frontend** — random `*.ngrok-free.app` URL, printed by `./run.sh --tunnel` on launch. Phones get the current URL via the QR (`window.location.origin`), so churn is invisible to players.
+- **Backend** — ngrok with reserved free static domain (e.g. `https://fifth-morphine-shock.ngrok-free.dev`). Stable across restarts because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time.
+- **Frontend** — cloudflared quick tunnel, random `*.trycloudflare.com` URL each run, printed by `./run.sh --tunnel` on launch. Phones get the current URL via the QR (`window.location.origin`), so churn is invisible to players.
+- Two tunneling services because ngrok free = 1 simultaneous public URL per agent; cloudflared quick tunnels are free, no signup, support multiple concurrent + WebSocket.
 - Live **only while** `./run.sh --tunnel` is running on the host. Trade vs. Render: no cold start, no monthly bill; cost is the laptop must be on.
 
 ## Run locally
@@ -30,7 +31,7 @@ First run auto-creates `.venv`, installs deps, copies `.env` / `.env.local` from
 
 **LAN play (phone QR scan, same Wi-Fi):** leave `frontend/.env.local` empty — frontend auto-derives backend URL from browser hostname. Open `http://<host-LAN-IP>:3000/host`.
 
-**Tunnel play:** one-time ngrok signup + reserve 1 free static domain, set `NGROK_AUTHTOKEN` and `NGROK_BACKEND_DOMAIN` in `backend/.env`, then `./run.sh --tunnel`. Full walkthrough in `TUNNEL.md`.
+**Tunnel play:** one-time ngrok signup + reserve 1 free static domain, set `NGROK_AUTHTOKEN` and `NGROK_BACKEND_DOMAIN` in `backend/.env`, `brew install ngrok cloudflared`, then `./run.sh --tunnel`. Full walkthrough in `TUNNEL.md`.
 
 ## Stack
 
@@ -38,7 +39,7 @@ First run auto-creates `.venv`, installs deps, copies `.env` / `.env.local` from
 - **Frontend**: Next.js 14 + React + TypeScript strict + Tailwind + Framer Motion + qrcode.react + socket.io-client
 - **DB**: SQLite — 266 questions; `games` + `game_players` tables for history
 - **LLM**: PydanticAI → OpenAI `gpt-4o-mini` for Call-a-Friend
-- **Tunneling**: ngrok (two endpoints, one reserved free domain), launched by `./run.sh --tunnel`
+- **Tunneling**: ngrok (backend, reserved free static domain) + cloudflared (frontend, quick tunnel) — both launched by `./run.sh --tunnel`
 
 ## Layout
 
@@ -173,21 +174,22 @@ python -m pytest backend/tests/ -v
 - Socket handlers wrap logic in try/except → emit `error` event instead of crashing. LLM failures degrade to a canned fallback.
 - Constants in `config.py` / `tailwind.config.ts`. No magic numbers in logic files.
 
-## Tunnel (ngrok)
+## Tunnel (ngrok + cloudflared)
 
 `./run.sh --tunnel` does it all:
 
 1. Loads `NGROK_AUTHTOKEN` + `NGROK_BACKEND_DOMAIN` from `backend/.env`.
 2. Renders `.ngrok.yml` from `ngrok.yml.example` (envsubst, gitignored output).
-3. Starts `ngrok start --all` in background.
-4. Polls `127.0.0.1:4040/api/tunnels` for both public URLs.
-5. Writes `frontend/.env.local` with `NEXT_PUBLIC_API_URL=<backend ngrok URL>`.
-6. Exports `FRONTEND_URL=<frontend ngrok URL>` so backend CORS allows it (env wins over `load_dotenv`).
-7. Boots backend + frontend in dev mode and prints the live URL.
+3. Starts ngrok (single backend tunnel, reserved domain) in background.
+4. Polls `127.0.0.1:4040/api/tunnels` for the backend URL.
+5. Starts `cloudflared tunnel --url http://localhost:3000` in background; tails `.cloudflared.log` for the allocated `https://*.trycloudflare.com` URL.
+6. Writes `frontend/.env.local` with both `NEXT_PUBLIC_API_URL` (ngrok backend) and `NEXT_PUBLIC_TUNNEL_URL` (cloudflared frontend).
+7. Exports `FRONTEND_URL=<cloudflared URL>,http://localhost:3000,http://127.0.0.1:3000` so backend CORS allows tunnel and local origins (env wins over `load_dotenv`).
+8. Boots backend + frontend in dev mode, prints the live URL, auto-opens the browser.
 
-Backend gets the static reserved domain; frontend gets a fresh random subdomain each run. Reasoning: `NEXT_PUBLIC_API_URL` is inlined at compile time by Next.js, so the backend URL must be stable. Frontend churn is invisible to players because the QR encodes `window.location.origin`.
+Why this split: ngrok free tier allocates only one simultaneous public URL per agent — so it gets the backend (paired with the reserved free static domain to keep `NEXT_PUBLIC_API_URL` stable across restarts). Cloudflare quick tunnels are free, no signup, no auth, support multiple concurrent + WebSocket — perfect for the second URL. Frontend churn is invisible to players because the QR encodes `window.location.origin`.
 
-Setup: signup at ngrok.com (free) → copy authtoken → reserve 1 free static domain. Full walkthrough in `TUNNEL.md`.
+Setup: ngrok signup → reserve 1 free static domain → `brew install ngrok cloudflared`. Full walkthrough in `TUNNEL.md`.
 
 ## Manual QA checklist
 

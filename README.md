@@ -27,7 +27,7 @@ Solo? Open the printed `/cpu` URL — instant game with 3 bots.
 - **Frontend**: Next.js 14 + React + TypeScript strict + Tailwind + Framer Motion + qrcode.react + socket.io-client
 - **DB**: SQLite — 266 questions in `trivia.db`, plus `games` + `game_players` history tables
 - **LLM**: PydanticAI → OpenAI (`gpt-4o-mini`) for Call-a-Friend
-- **Tunneling**: ngrok (two endpoints, one reserved domain on the free tier)
+- **Tunneling**: ngrok (backend, reserved free static domain) + cloudflared (frontend, quick tunnel)
 
 ## Run locally
 
@@ -164,17 +164,20 @@ python -m pytest backend/tests/ -v
 | Chat / emojis | ✅ text + quick emoji bar |
 | Adaptive difficulty | ✅ |
 | SQLite | ✅ game history |
-| Friends-anywhere tunnel | ✅ ngrok (two endpoints, one reserved domain) |
+| Friends-anywhere tunnel | ✅ ngrok (backend, reserved domain) + cloudflared (frontend) |
 | ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, one-command tunnel launch |
 
-## Tunnel (ngrok)
+## Tunnel (ngrok + cloudflared)
 
 Full setup in [TUNNEL.md](TUNNEL.md). Short version:
 
 1. Sign up at ngrok.com (free), copy authtoken, reserve 1 free static domain.
 2. Add `NGROK_AUTHTOKEN` + `NGROK_BACKEND_DOMAIN` to `backend/.env`.
-3. `./run.sh --tunnel` — boots backend, frontend, and two ngrok tunnels in one command. Prints the live URL.
+3. `brew install ngrok cloudflared`.
+4. `./run.sh --tunnel` — boots backend, frontend, ngrok (backend), cloudflared (frontend) in one command. Prints the live URL and auto-opens the browser.
 
-Backend gets the reserved (stable) domain because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time. Frontend uses a fresh random `*.ngrok-free.app` URL each run — that's fine because the QR uses `window.location.origin`. CORS is wired up automatically: `run.sh` reads the frontend ngrok URL from the local ngrok API and exports it as `FRONTEND_URL` before launching uvicorn.
+ngrok carries the backend on its reserved (stable) domain because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time. cloudflared carries the frontend on a random `*.trycloudflare.com` URL each run — that's fine because the QR uses `window.location.origin`. CORS is wired up automatically: `run.sh` reads both URLs and exports `FRONTEND_URL` before launching uvicorn.
 
-**Trade vs. cloud deploy**: tunnel only works while your laptop is on and `./run.sh --tunnel` is running. No cold start, no hosting bill.
+Why two tunneling services? ngrok free tier allocates only one simultaneous public URL per agent. Cloudflare quick tunnels are free, no signup, support multiple per machine and WebSocket — perfect for the second URL.
+
+**Trade vs. cloud deploy**: tunnels only work while your laptop is on and `./run.sh --tunnel` is running. No cold start, no hosting bill.

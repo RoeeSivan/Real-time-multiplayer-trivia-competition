@@ -1,4 +1,14 @@
-## ngrok agent config — template.
+## ngrok agent config — backend tunnel only.
+##
+## Why only the backend goes through ngrok: free tier allocates one public URL
+## per agent at a time (account-level limit; v2/v3 yaml format doesn't
+## change it). The backend gets the reserved free static domain so
+## NEXT_PUBLIC_API_URL stays stable across restarts (Next.js bakes it at
+## compile time).
+##
+## The frontend is exposed via Cloudflare quick tunnels (cloudflared) instead
+## — see run.sh. trycloudflare.com URLs are random per restart but invisible
+## to phones because the QR uses window.location.origin.
 ##
 ## This file is the SHAPE of the config. It is NOT consumed directly because
 ## ngrok yaml does not interpolate env vars. `./run.sh --tunnel` reads your
@@ -11,25 +21,14 @@
 ##   3. Reserve one static domain (free tier allows 1) for the backend.
 ##   4. Add to backend/.env (or your shell):
 ##        NGROK_AUTHTOKEN=2abc...
-##        NGROK_BACKEND_DOMAIN=trivia-be.ngrok-free.app
-##   5. ./run.sh --tunnel
-##
-## Why backend gets the static domain (not frontend): Next.js bakes
-## NEXT_PUBLIC_API_URL into the JS bundle at compile time. A stable backend
-## URL means we don't have to rebuild the frontend on every restart. The
-## frontend gets a fresh random *.ngrok-free.app URL each run — that's fine
-## because the QR uses window.location.origin, so phones always reach the
-## current frontend URL.
+##        NGROK_BACKEND_DOMAIN=fifth-morphine-shock.ngrok-free.dev
+##   5. brew install cloudflared
+##   6. ./run.sh --tunnel
 
-version: "3"
-agent:
-  authtoken: ${NGROK_AUTHTOKEN}
-endpoints:
-  - name: backend
-    url: https://${NGROK_BACKEND_DOMAIN}
-    upstream:
-      url: 8000
-  - name: frontend
-    # No url: → ngrok assigns a random *.ngrok-free.app each run.
-    upstream:
-      url: 3000
+version: "2"
+authtoken: ${NGROK_AUTHTOKEN}
+tunnels:
+  backend:
+    proto: http
+    addr: 8000
+    domain: ${NGROK_BACKEND_DOMAIN}

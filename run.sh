@@ -61,13 +61,20 @@ if [[ ! -f frontend/.env.local ]]; then
   cp frontend/.env.local.example frontend/.env.local
 fi
 
-# --- Tunnel mode: ngrok bring-up ---
+# --- Tunnel mode: ngrok (backend) + cloudflared (frontend) ---
+# ngrok free = 1 simultaneous public URL per agent, so it gets the backend
+# (paired with the reserved static domain so NEXT_PUBLIC_API_URL stays stable).
+# Cloudflare quick tunnels are free, no signup, support multiple per machine
+# and WebSocket — perfect for the frontend.
 NGROK_PID=""
+CFD_PID=""
 if [[ $MODE == "tunnel" ]]; then
-  if ! command -v ngrok >/dev/null 2>&1; then
-    err "ngrok not installed. Install: brew install ngrok  (or https://ngrok.com/download)"
-    exit 1
-  fi
+  for bin in ngrok cloudflared; do
+    if ! command -v "$bin" >/dev/null 2>&1; then
+      err "$bin not installed. Install: brew install $bin"
+      exit 1
+    fi
+  done
   if [[ ! -f ngrok.yml.example ]]; then
     err "ngrok.yml.example missing — repo broken."
     exit 1
@@ -83,37 +90,48 @@ if [[ $MODE == "tunnel" ]]; then
   : "${NGROK_BACKEND_DOMAIN:?NGROK_BACKEND_DOMAIN unset — add to backend/.env (reserve a free static domain at https://dashboard.ngrok.com/domains)}"
 
   log "rendering .ngrok.yml from template…"
-  # envsubst only replaces the two vars we declare — avoids accidental ${...} stomping.
   envsubst '${NGROK_AUTHTOKEN} ${NGROK_BACKEND_DOMAIN}' < ngrok.yml.example > .ngrok.yml
 
-  log "starting ngrok (backend → ${C_PURPLE}https://${NGROK_BACKEND_DOMAIN}${C_RESET}, frontend → random)…"
+  log "starting ngrok backend → ${C_PURPLE}https://${NGROK_BACKEND_DOMAIN}${C_RESET}…"
   ngrok start --all --config .ngrok.yml --log .ngrok.log --log-format json >/dev/null 2>&1 &
   NGROK_PID=$!
 
-  # Poll the ngrok local API until both tunnels appear.
-  log "waiting for ngrok to allocate tunnels…"
-  TUNNEL_JSON=""
+  log "waiting for ngrok backend tunnel…"
+  BACKEND_URL=""
   for _ in $(seq 1 30); do
     if TUNNEL_JSON=$(curl -fsS http://127.0.0.1:4040/api/tunnels 2>/dev/null); then
-      if python3 -c "import json,sys;d=json.loads(sys.stdin.read());sys.exit(0 if len(d.get('tunnels',[]))>=2 else 1)" <<<"$TUNNEL_JSON"; then
-        break
-      fi
+      BACKEND_URL=$(printf '%s' "$TUNNEL_JSON" | python3 -c "import json,sys
+for t in json.load(sys.stdin).get('tunnels',[]):
+    if t.get('name')=='backend':
+        print(t['public_url']); break")
+      [[ -n "$BACKEND_URL" ]] && break
     fi
     sleep 0.5
   done
 
-  BACKEND_URL=$(printf '%s' "$TUNNEL_JSON" | python3 -c "import json,sys
-for t in json.load(sys.stdin).get('tunnels',[]):
-    if t.get('name')=='backend':
-        print(t['public_url']); break")
-  FRONTEND_URL_TUN=$(printf '%s' "$TUNNEL_JSON" | python3 -c "import json,sys
-for t in json.load(sys.stdin).get('tunnels',[]):
-    if t.get('name')=='frontend':
-        print(t['public_url']); break")
-
-  if [[ -z "$BACKEND_URL" || -z "$FRONTEND_URL_TUN" ]]; then
-    err "could not read tunnel URLs from ngrok API. Check .ngrok.log."
+  if [[ -z "$BACKEND_URL" ]]; then
+    err "ngrok did not allocate the backend tunnel. Check .ngrok.log."
     kill "$NGROK_PID" 2>/dev/null || true
+    exit 1
+  fi
+
+  log "starting cloudflared frontend → ${C_PURPLE}trycloudflare.com${C_RESET}…"
+  : > .cloudflared.log
+  cloudflared tunnel --url http://localhost:3000 --no-autoupdate >.cloudflared.log 2>&1 &
+  CFD_PID=$!
+
+  log "waiting for cloudflared to allocate URL (can take 5–15s)…"
+  FRONTEND_URL_TUN=""
+  for _ in $(seq 1 60); do
+    FRONTEND_URL_TUN=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' .cloudflared.log | head -1)
+    [[ -n "$FRONTEND_URL_TUN" ]] && break
+    sleep 0.5
+  done
+
+  if [[ -z "$FRONTEND_URL_TUN" ]]; then
+    err "cloudflared did not allocate a URL in 30s. Tail of .cloudflared.log:"
+    tail -20 .cloudflared.log >&2
+    kill "$NGROK_PID" "$CFD_PID" 2>/dev/null || true
     exit 1
   fi
 
@@ -125,8 +143,7 @@ NEXT_PUBLIC_TUNNEL_URL=$FRONTEND_URL_TUN
 EOF
 
   # Backend reads FRONTEND_URL via load_dotenv (override=False). Exporting wins.
-  # Include localhost so opening the frontend at http://localhost:3000 still
-  # connects (CORS is comma-separated; backend trims trailing slashes).
+  # Include localhost so opening http://localhost:3000 still connects.
   export FRONTEND_URL="$FRONTEND_URL_TUN,http://localhost:3000,http://127.0.0.1:3000"
 fi
 
@@ -134,11 +151,8 @@ fi
 PIDS=()
 cleanup() {
   log "shutting down…"
-  if [[ -n "$NGROK_PID" ]]; then
-    kill "$NGROK_PID" 2>/dev/null || true
-  fi
-  for pid in "${PIDS[@]:-}"; do
-    kill "$pid" 2>/dev/null || true
+  for pid in "$NGROK_PID" "$CFD_PID" "${PIDS[@]:-}"; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
   done
   wait 2>/dev/null || true
   exit 0
