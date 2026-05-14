@@ -75,6 +75,8 @@ Ctrl-C in the terminal kills backend, frontend, and ngrok cleanly.
 | `ERR_NGROK_3200` / domain in use | another ngrok agent already holds your reserved domain | kill old `ngrok` processes: `pkill ngrok` |
 | backend tunnel is up but `502` | upstream not yet listening | wait ~3s; uvicorn boot takes a moment |
 | Phone gets "ERR_NGROK_6024" interstitial | first-visit warning page on free tier | tap through once; subsequent loads skip it (the Socket.IO handshake also bypasses it) |
+| **First scan shows "You are about to visit..." page** | ngrok-free interstitial — fires on the first HTML visit to any `*.ngrok-free.app/.dev` URL | Tap **Visit Site** once per device. Socket.IO traffic bypasses the interstitial automatically (only triggers on `Accept: text/html`). Only paid plan removes it. |
+| QR encodes `localhost:3000/join/...` | host opened laptop URL `http://localhost:3000/host` instead of the tunnel URL | The `/host` page now shows a yellow warning banner with the correct URL — click it. (The script also auto-opens the tunnel URL on launch to prevent this.) |
 | CORS error in browser console | `FRONTEND_URL` not exported to backend | confirm `./run.sh --tunnel` printed both URLs; restart |
 | Frontend connects to wrong backend | stale `frontend/.env.local` | the script overwrites this file each run; if you ran `--prod` afterward, run `--tunnel` again |
 | `ngrok` not found | not installed | `brew install ngrok` |
