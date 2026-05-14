@@ -80,7 +80,9 @@ LOBBY → COUNTDOWN(3s) → QUESTION(15s) → [private answer_result]
 **Client → Server**
 - `create_room {mode, name}` → ack `{room_code, player_id, is_host, players}`
 - `join_room {room_code, name}` → same ack
+- `rejoin_room {room_code, player_id}` → rebind sid after reconnect
 - `start_game` (host only)
+- `restart_game` (host only, state must be "ended") — cancels pending 60s cleanup, calls `Room.reset_for_replay()` (wipes scores/helps/used-Qs/history, drops bots), refills bots, emits `lobby_update` + `game_starting`
 - `submit_answer {question_idx, option_idx}`
 - `use_help {type: "fifty"|"friend"|"double"}` → ack with help payload
 - `chat {text}` (emoji as unicode in text)
@@ -207,7 +209,8 @@ Before the demo / submission, walk through this on the live URL.
 - [ ] Difficulty trends with accuracy.
 - [ ] Bots answer at varied times.
 - [ ] 10 questions → final leaderboard + winner + medals.
-- [ ] Play again → returns to mode picker.
+- [ ] **Play again (same room)** on leaderboard → countdown again, fresh 10 Qs, scores+helps reset, new bot names.
+- [ ] Back to home link → returns to mode picker.
 
 ### B. Helps (CPU game)
 - [ ] **50/50** — 2 wrong options grayed/struck. Button disables (one-shot).
@@ -223,6 +226,7 @@ Before the demo / submission, walk through this on the live URL.
 - [ ] Both screens show same question + difficulty.
 - [ ] Each only sees own ✓/✗ between rounds.
 - [ ] Final leaderboard ranks both correctly.
+- [ ] Host hits **Play again (same room)** → both clients re-enter countdown together with reset scores/helps. iPhone shows "Waiting for host…" before host clicks.
 
 ### D. Chat
 - [ ] Text → both screens see it with sender name.
@@ -245,7 +249,7 @@ Before the demo / submission, walk through this on the live URL.
 
 ### Quick wins
 - [x] **Migrate Render → ngrok tunnels** — `./run.sh --tunnel` boots backend + frontend + 2 ngrok tunnels, writes env files, exports CORS origin. Stable backend domain, random frontend (QR uses `window.location.origin`). Done 2026-05-14.
-- [ ] **Restart-room button** on leaderboard — fresh round with same players instead of nav back to `/`.
+- [x] **Restart-room button** on leaderboard — host-only `restart_game` event, `Room.reset_for_replay()` wipes state, cancels pending cleanup task, repopulates bots, re-emits `game_starting`. Non-hosts see "Waiting for host…". Done 2026-05-14.
 - [ ] **Confetti on win** — `canvas-confetti`, ~5 KB.
 - [ ] **Title contrast** — bump home-title legibility (drop-shadow or solid color + accent underline).
 - [ ] **`--tunnel` graceful exit hint** — if `pkill ngrok` shows orphans on shutdown, force-kill via PID file rather than relying on $! tracking.

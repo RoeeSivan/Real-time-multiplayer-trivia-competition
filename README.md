@@ -18,8 +18,9 @@ The script prints the live URL on launch — looks like `https://1a2b-3c4d.ngrok
 2. Pick a name → QR code + room code appear.
 3. Friends scan the QR (or open `/join/<CODE>`), pick a name, join.
 4. Host clicks **Start** → 3-2-1 → 10 questions → leaderboard.
+5. Host can hit **Play again (same room)** on the leaderboard to run another match with the same players — no re-scan, no new room code.
 
-Solo? Open the printed `/cpu` URL — instant game with 3 bots.
+Solo? Open the printed `/cpu` URL — instant game with 3 bots. **Play again** restarts with a fresh bot pool.
 
 ## Stack
 
@@ -82,7 +83,9 @@ LOBBY → COUNTDOWN(3s) → QUESTION(15s) → [private answer_result]
 **Client → Server**
 - `create_room {mode, name}` → ack `{room_code, player_id, is_host, players}`
 - `join_room {room_code, name}` → same ack
+- `rejoin_room {room_code, player_id}` → rebinds new sid to existing player after reconnect
 - `start_game` (host only)
+- `restart_game` (host only, post-game) — resets scores/helps/used Qs, refills bots, re-emits `game_starting`
 - `submit_answer {question_idx, option_idx}`
 - `use_help {type: "fifty"|"friend"|"double"}` → ack with help payload
 - `chat {text}` (emoji as unicode in text)
@@ -165,7 +168,7 @@ python -m pytest backend/tests/ -v
 | Adaptive difficulty | ✅ |
 | SQLite | ✅ game history |
 | Friends-anywhere tunnel | ✅ ngrok (backend, reserved domain) + cloudflared (frontend) |
-| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, one-command tunnel launch |
+| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, one-command tunnel launch, restart-room (Play again) |
 
 ## Tunnel (ngrok + cloudflared)
 
