@@ -1,0 +1,35 @@
+## ngrok agent config — template.
+##
+## This file is the SHAPE of the config. It is NOT consumed directly because
+## ngrok yaml does not interpolate env vars. `./run.sh --tunnel` reads your
+## env (NGROK_AUTHTOKEN, NGROK_BACKEND_DOMAIN) and writes the real config to
+## `.ngrok.yml` (gitignored) before launching ngrok.
+##
+## One-time setup:
+##   1. ngrok signup → https://dashboard.ngrok.com (free).
+##   2. Copy your authtoken from the ngrok dashboard.
+##   3. Reserve one static domain (free tier allows 1) for the backend.
+##   4. Add to backend/.env (or your shell):
+##        NGROK_AUTHTOKEN=2abc...
+##        NGROK_BACKEND_DOMAIN=trivia-be.ngrok-free.app
+##   5. ./run.sh --tunnel
+##
+## Why backend gets the static domain (not frontend): Next.js bakes
+## NEXT_PUBLIC_API_URL into the JS bundle at compile time. A stable backend
+## URL means we don't have to rebuild the frontend on every restart. The
+## frontend gets a fresh random *.ngrok-free.app URL each run — that's fine
+## because the QR uses window.location.origin, so phones always reach the
+## current frontend URL.
+
+version: "3"
+agent:
+  authtoken: ${NGROK_AUTHTOKEN}
+endpoints:
+  - name: backend
+    url: https://${NGROK_BACKEND_DOMAIN}
+    upstream:
+      url: 8000
+  - name: frontend
+    # No url: → ngrok assigns a random *.ngrok-free.app each run.
+    upstream:
+      url: 3000

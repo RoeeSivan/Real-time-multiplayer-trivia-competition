@@ -4,20 +4,22 @@ Real-time multiplayer trivia for Assignment #3, Exercise 2. Two modes (vs Comput
 
 ## Play it
 
-- **Play**: https://trivia-frontend-laro.onrender.com
-- **Host friends game**: https://trivia-frontend-laro.onrender.com/host
-- **Backend (Socket.IO + FastAPI)**: https://trivia-backend-ze83.onrender.com
+The game runs from your laptop and is exposed to the internet via two ngrok tunnels — no cloud deploy. Live URL only works while `./run.sh --tunnel` is running on the host machine.
 
-Both services are pinged every 10 min by cron-job.org → always warm, no cold-start delay.
+```bash
+./run.sh --tunnel    # see TUNNEL.md for one-time ngrok setup
+```
+
+The script prints the live URL on launch — looks like `https://1a2b-3c4d.ngrok-free.app/host`.
 
 ### Friends game
 
-1. Open https://trivia-frontend-laro.onrender.com/host on your machine.
+1. Run `./run.sh --tunnel` on your laptop. Open the printed `/host` URL.
 2. Pick a name → QR code + room code appear.
 3. Friends scan the QR (or open `/join/<CODE>`), pick a name, join.
 4. Host clicks **Start** → 3-2-1 → 10 questions → leaderboard.
 
-Solo? https://trivia-frontend-laro.onrender.com/cpu — instant game with 3 bots.
+Solo? Open the printed `/cpu` URL — instant game with 3 bots.
 
 ## Stack
 
@@ -25,24 +27,21 @@ Solo? https://trivia-frontend-laro.onrender.com/cpu — instant game with 3 bots
 - **Frontend**: Next.js 14 + React + TypeScript strict + Tailwind + Framer Motion + qrcode.react + socket.io-client
 - **DB**: SQLite — 266 questions in `trivia.db`, plus `games` + `game_players` history tables
 - **LLM**: PydanticAI → OpenAI (`gpt-4o-mini`) for Call-a-Friend
-- **Deploy**: Render (two web services) + cron-job.org keep-alive
+- **Tunneling**: ngrok (two endpoints, one reserved domain on the free tier)
 
 ## Run locally
 
 ```bash
-./run.sh           # dev (uvicorn --reload + next dev)
-./run.sh --prod    # uvicorn + next build && next start
+./run.sh            # dev      — uvicorn --reload + next dev (LAN-only)
+./run.sh --prod     # prod-ish — uvicorn + next build && next start (LAN-only)
+./run.sh --tunnel   # ngrok    — public URLs via two ngrok tunnels (any network)
 ```
 
 First run auto-creates `.venv`, installs deps, copies `.env` / `.env.local` from examples.
 
-**LAN play (phone QR scan, same Wi-Fi):** set `frontend/.env.local`:
-```
-NEXT_PUBLIC_API_URL=http://<host-LAN-IP>:8000
-```
-Open `http://<host-LAN-IP>:3000/host` on the host. QR encodes that IP so phones can scan + join.
+**LAN play (phone QR scan, same Wi-Fi):** leave `frontend/.env.local` empty — the frontend auto-derives the backend URL from the browser's hostname. Open `http://<host-LAN-IP>:3000/host` on the host.
 
-**Tunnel play (any network):** run pinggy/ngrok against ports 8000 and 3000, set the public backend URL in `frontend/.env.local`. Or just use the Render deploy above.
+**Tunnel play (any network):** see [TUNNEL.md](TUNNEL.md) for the one-time ngrok setup, then `./run.sh --tunnel`.
 
 ## Layout
 
@@ -165,17 +164,17 @@ python -m pytest backend/tests/ -v
 | Chat / emojis | ✅ text + quick emoji bar |
 | Adaptive difficulty | ✅ |
 | SQLite | ✅ game history |
-| Friends-anywhere tunnel | ✅ Render deploy (pinggy/ngrok also supported) |
-| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, always-on Render deploy |
+| Friends-anywhere tunnel | ✅ ngrok (two endpoints, one reserved domain) |
+| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, one-command tunnel launch |
 
-## Deploy (Render)
+## Tunnel (ngrok)
 
-Two web services.
+Full setup in [TUNNEL.md](TUNNEL.md). Short version:
 
-**Backend** — root `backend/`, build `pip install -r requirements.txt`, start `uvicorn main:app --host 0.0.0.0 --port $PORT`, env `OPENAI_API_KEY`.
+1. Sign up at ngrok.com (free), copy authtoken, reserve 1 free static domain.
+2. Add `NGROK_AUTHTOKEN` + `NGROK_BACKEND_DOMAIN` to `backend/.env`.
+3. `./run.sh --tunnel` — boots backend, frontend, and two ngrok tunnels in one command. Prints the live URL.
 
-**Frontend** — root `frontend/`, build `npm ci && npm run build`, start `npm start`, env `NEXT_PUBLIC_API_URL=https://trivia-backend-ze83.onrender.com`.
+Backend gets the reserved (stable) domain because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time. Frontend uses a fresh random `*.ngrok-free.app` URL each run — that's fine because the QR uses `window.location.origin`. CORS is wired up automatically: `run.sh` reads the frontend ngrok URL from the local ngrok API and exports it as `FRONTEND_URL` before launching uvicorn.
 
-CORS on the backend allows the frontend origin so the Socket.IO handshake succeeds across both domains.
-
-**Keep-alive**: cron-job.org pings `/health` and frontend root every 10 min. Render free tier sleeps after 15 min idle, so this keeps both services warm 24/7 within the 750 hr/mo free quota.
+**Trade vs. cloud deploy**: tunnel only works while your laptop is on and `./run.sh --tunnel` is running. No cold start, no hosting bill.

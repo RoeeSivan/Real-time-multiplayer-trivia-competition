@@ -12,25 +12,25 @@ Real-time multiplayer trivia per Assignment #3, Exercise 2. Two modes:
 
 ## Live URLs
 
-- **Play**: https://trivia-frontend-laro.onrender.com
-- **API**: https://trivia-backend-ze83.onrender.com
+No 24/7 cloud hosting. Game runs from a laptop and is exposed via two ngrok tunnels.
 
-Both services kept warm 24/7 by cron-job.org pings every 10 min → no cold-start delay.
+- **Backend** — reserved free static domain (e.g. `https://trivia-be.ngrok-free.app`). Stable across restarts because Next.js bakes `NEXT_PUBLIC_API_URL` at compile time.
+- **Frontend** — random `*.ngrok-free.app` URL, printed by `./run.sh --tunnel` on launch. Phones get the current URL via the QR (`window.location.origin`), so churn is invisible to players.
+- Live **only while** `./run.sh --tunnel` is running on the host. Trade vs. Render: no cold start, no monthly bill; cost is the laptop must be on.
 
 ## Run locally
 
 ```bash
-./run.sh           # dev (uvicorn --reload + next dev)
-./run.sh --prod    # uvicorn + next build && next start
+./run.sh            # dev      — uvicorn --reload + next dev (LAN-only)
+./run.sh --prod     # prod-ish — uvicorn + next build && next start (LAN-only)
+./run.sh --tunnel   # ngrok    — public URLs via two tunnels (any network)
 ```
 
 First run auto-creates `.venv`, installs deps, copies `.env` / `.env.local` from examples.
 
-**LAN play (phone QR scan):** set `frontend/.env.local`:
-```
-NEXT_PUBLIC_API_URL=http://<host-LAN-IP>:8000
-```
-Open `http://<host-LAN-IP>:3000/host`.
+**LAN play (phone QR scan, same Wi-Fi):** leave `frontend/.env.local` empty — frontend auto-derives backend URL from browser hostname. Open `http://<host-LAN-IP>:3000/host`.
+
+**Tunnel play:** one-time ngrok signup + reserve 1 free static domain, set `NGROK_AUTHTOKEN` and `NGROK_BACKEND_DOMAIN` in `backend/.env`, then `./run.sh --tunnel`. Full walkthrough in `TUNNEL.md`.
 
 ## Stack
 
@@ -38,7 +38,7 @@ Open `http://<host-LAN-IP>:3000/host`.
 - **Frontend**: Next.js 14 + React + TypeScript strict + Tailwind + Framer Motion + qrcode.react + socket.io-client
 - **DB**: SQLite — 266 questions; `games` + `game_players` tables for history
 - **LLM**: PydanticAI → OpenAI `gpt-4o-mini` for Call-a-Friend
-- **Deploy**: Render (two web services) + cron-job.org keep-alive
+- **Tunneling**: ngrok (two endpoints, one reserved free domain), launched by `./run.sh --tunnel`
 
 ## Layout
 
@@ -161,8 +161,8 @@ python -m pytest backend/tests/ -v
 | Chat / emojis | ✅ text + quick emoji bar |
 | Adaptive difficulty | ✅ |
 | SQLite | ✅ game history persisted |
-| Friends-anywhere tunnel | ✅ Render deploy (pinggy/ngrok also supported) |
-| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, always-on Render deploy |
+| Friends-anywhere tunnel | ✅ ngrok (two endpoints, one reserved domain) |
+| ≥ 2 extra features | ✅ QR-code multiplayer, Framer Motion, WebAudio, mobile-first, private reveal, one-command tunnel launch |
 
 ## Code quality
 
@@ -173,17 +173,21 @@ python -m pytest backend/tests/ -v
 - Socket handlers wrap logic in try/except → emit `error` event instead of crashing. LLM failures degrade to a canned fallback.
 - Constants in `config.py` / `tailwind.config.ts`. No magic numbers in logic files.
 
-## Deploy (Render)
+## Tunnel (ngrok)
 
-Two web services.
+`./run.sh --tunnel` does it all:
 
-**Backend** — root `backend/`, build `pip install -r requirements.txt`, start `uvicorn main:app --host 0.0.0.0 --port $PORT`, env `OPENAI_API_KEY`.
+1. Loads `NGROK_AUTHTOKEN` + `NGROK_BACKEND_DOMAIN` from `backend/.env`.
+2. Renders `.ngrok.yml` from `ngrok.yml.example` (envsubst, gitignored output).
+3. Starts `ngrok start --all` in background.
+4. Polls `127.0.0.1:4040/api/tunnels` for both public URLs.
+5. Writes `frontend/.env.local` with `NEXT_PUBLIC_API_URL=<backend ngrok URL>`.
+6. Exports `FRONTEND_URL=<frontend ngrok URL>` so backend CORS allows it (env wins over `load_dotenv`).
+7. Boots backend + frontend in dev mode and prints the live URL.
 
-**Frontend** — root `frontend/`, build `npm ci && npm run build`, start `npm start`, env `NEXT_PUBLIC_API_URL=https://trivia-backend-ze83.onrender.com`.
+Backend gets the static reserved domain; frontend gets a fresh random subdomain each run. Reasoning: `NEXT_PUBLIC_API_URL` is inlined at compile time by Next.js, so the backend URL must be stable. Frontend churn is invisible to players because the QR encodes `window.location.origin`.
 
-CORS allows the frontend origin so the Socket.IO handshake works across both domains.
-
-**Keep-alive**: cron-job.org pings `/health` (backend) and `/` (frontend) every 10 min. Render free tier sleeps after 15 min idle, so this keeps both services warm 24/7.
+Setup: signup at ngrok.com (free) → copy authtoken → reserve 1 free static domain. Full walkthrough in `TUNNEL.md`.
 
 ## Manual QA checklist
 
@@ -238,11 +242,11 @@ Before the demo / submission, walk through this on the live URL.
 ## Backlog
 
 ### Quick wins
-- [x] **Keep-alive cron pinger** — cron-job.org hits `/health` and frontend root every 10 min. Both services warm 24/7. Done 2026-05-13.
-- [ ] **Cold-start hint** — even with keep-alive, an occasional Render restart can hit a fresh user. Show "Backend waking up — up to 30s on free hosting" if connect takes >5s.
+- [x] **Migrate Render → ngrok tunnels** — `./run.sh --tunnel` boots backend + frontend + 2 ngrok tunnels, writes env files, exports CORS origin. Stable backend domain, random frontend (QR uses `window.location.origin`). Done 2026-05-14.
 - [ ] **Restart-room button** on leaderboard — fresh round with same players instead of nav back to `/`.
 - [ ] **Confetti on win** — `canvas-confetti`, ~5 KB.
 - [ ] **Title contrast** — bump home-title legibility (drop-shadow or solid color + accent underline).
+- [ ] **`--tunnel` graceful exit hint** — if `pkill ngrok` shows orphans on shutdown, force-kill via PID file rather than relying on $! tracking.
 
 ### Polish
 - [ ] **Sound on/off toggle** — WebAudio cue is on by default; demos may want silence.
@@ -253,7 +257,7 @@ Before the demo / submission, walk through this on the live URL.
 
 ### Real features
 - [ ] **Hall of Fame** — `/api/games` endpoint + `/hall-of-fame` page reading `games` + `game_players`. Lifetime ranking.
-- [ ] **Persistent game history on Render** — `trivia.db` is ephemeral on free tier. Either attach Render Persistent Disk ($1/mo) or migrate to Neon Postgres (free).
+- [ ] **Persistent game history across machines** — `trivia.db` lives on the laptop running `--tunnel`. If that machine dies, history dies too. Migrate to Neon Postgres (free) for cross-host persistence.
 - [ ] **Reconnect grace period config** — rooms tear down 60s after game end. Make configurable + expose hint.
 - [ ] **Per-player help loadouts** — host picks which 3 helps the room uses.
 - [ ] **Question categories** — tag history/science/sports; host filters.
