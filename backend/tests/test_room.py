@@ -128,6 +128,82 @@ def test_unanswered_recorded_as_wrong_on_finalize():
         assert ans.points == 0
 
 
+def test_streak_increments_and_resets():
+    """Streak counter goes up on correct, resets on wrong."""
+    random.seed(10)
+    room = _make_cpu_room()
+    room.start_game()
+    human = next(p for p in room.players.values() if not p.is_bot)
+    assert human.streak == 0
+
+    # Two correct in a row.
+    for _ in range(2):
+        q = room.begin_question()
+        room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+        room.finalize_question()
+        room.advance()
+    assert human.streak == 2
+
+    # Now answer wrong.
+    q = room.begin_question()
+    wrong_idx = (q.correct_idx + 1) % 4
+    room.submit_answer(player_id=human.id, option_idx=wrong_idx)
+    room.finalize_question()
+    assert human.streak == 0
+
+
+def test_streak_applies_multiplier_to_points():
+    """Third correct in a row uses streak=2 → ×1.5 multiplier."""
+    random.seed(11)
+    room = _make_cpu_room()
+    room.start_game()
+    human = next(p for p in room.players.values() if not p.is_bot)
+
+    # Answer two correctly to build streak=2.
+    for _ in range(2):
+        q = room.begin_question()
+        room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+        room.finalize_question()
+        room.advance()
+    assert human.streak == 2
+
+    # Third correct: streak_multiplier should be 1.5.
+    q = room.begin_question()
+    rec = room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    assert rec.streak_multiplier == 1.5
+    # Compare against a hypothetical no-streak score for the same elapsed time.
+    from backend.game.scoring import compute_points
+    base = compute_points(
+        correct=True,
+        elapsed=rec.elapsed,
+        time_limit=float(config.QUESTION_TIME),
+        doubled=False,
+    )
+    assert rec.points == round(base * 1.5)
+
+
+def test_streak_resets_on_replay():
+    random.seed(12)
+    room = _make_cpu_room()
+    room.start_game()
+    human = next(p for p in room.players.values() if not p.is_bot)
+    q = room.begin_question()
+    room.submit_answer(player_id=human.id, option_idx=q.correct_idx)
+    room.finalize_question()
+    assert human.streak == 1
+
+    # Fast-forward to ended via the public API.
+    while room.state != "ended":
+        if room.state == "reveal":
+            room.advance()
+            if room.state == "ended":
+                break
+            room.begin_question()
+            room.finalize_question()
+    room.reset_for_replay()
+    assert human.streak == 0
+
+
 def test_difficulty_increases_after_correct_streak():
     random.seed(5)
     room = _make_cpu_room()

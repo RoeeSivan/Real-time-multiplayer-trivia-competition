@@ -19,6 +19,9 @@ class Player:
     # Set when the player activates Double-Score for the *current* question.
     double_armed: bool = False
 
+    # Consecutive correct answers. Resets to 0 on wrong/timeout.
+    streak: int = 0
+
     id: str = field(default_factory=lambda: uuid4().hex[:8])
 
     def to_public(self) -> dict[str, object]:

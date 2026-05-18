@@ -167,3 +167,14 @@ def register(sio: socketio.AsyncServer) -> None:
             return _ack(str(e))
         except RoomError as e:
             return _ack(str(e))
+
+    @sio.event
+    async def reaction(sid: str, data: dict | None) -> dict:
+        try:
+            payload = models.ReactionIn.model_validate(data or {})
+            await mgr.reaction(sid, payload.emoji)
+            return _ack(None)
+        except ValidationError as e:
+            return _ack(str(e))
+        except RoomError as e:
+            return _ack(str(e))

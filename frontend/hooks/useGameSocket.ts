@@ -6,6 +6,7 @@ import { getSocket } from "@/lib/socket";
 import type {
   AckCreateRoom,
   AckJoinRoom,
+  ActiveReaction,
   AnswerResultEvt,
   ChatMsgEvt,
   ErrorEvt,
@@ -17,6 +18,7 @@ import type {
   Phase,
   PublicPlayer,
   QuestionEvt,
+  ReactionEvt,
   RoundEndEvt,
 } from "@/lib/types";
 
@@ -36,6 +38,7 @@ export interface GameState {
   winner: string | null;
   countdown: number | null;
   chat: ChatMsgEvt[];
+  reactions: ActiveReaction[];
   answeredIdx: number | null;
   fiftyRemoved: number[];
   doubled: boolean;
@@ -50,6 +53,7 @@ export interface GameState {
   submitAnswer: (optionIdx: number) => Promise<void>;
   useHelp: (type: "fifty" | "friend" | "double") => Promise<HelpResult | null>;
   sendChat: (text: string) => void;
+  sendReaction: (emoji: string) => void;
   clearFriendAdvice: () => void;
 }
 
@@ -69,6 +73,7 @@ export function useGameSocket(): GameState {
   const [winner, setWinner] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [chat, setChat] = useState<ChatMsgEvt[]>([]);
+  const [reactions, setReactions] = useState<ActiveReaction[]>([]);
   const [answeredIdx, setAnsweredIdx] = useState<number | null>(null);
   const [fiftyRemoved, setFiftyRemoved] = useState<number[]>([]);
   const [doubled, setDoubled] = useState(false);
@@ -142,6 +147,15 @@ export function useGameSocket(): GameState {
     const onChat = (d: ChatMsgEvt) => {
       setChat((c) => [...c, d].slice(-100));
     };
+    const onReaction = (d: ReactionEvt) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const x = 5 + Math.random() * 90;
+      setReactions((rs) => [...rs, { ...d, id, x }]);
+      // Drop after the animation finishes (~2s + tiny grace).
+      setTimeout(() => {
+        setReactions((rs) => rs.filter((r) => r.id !== id));
+      }, 2200);
+    };
     const onErr = (d: ErrorEvt) => setErrorMsg(d.message);
 
     s.on("lobby_update", onLobby);
@@ -151,6 +165,7 @@ export function useGameSocket(): GameState {
     s.on("round_end", onRoundEnd);
     s.on("game_over", onGameOver);
     s.on("chat_msg", onChat);
+    s.on("reaction", onReaction);
     s.on("error", onErr);
 
     return () => {
@@ -162,6 +177,7 @@ export function useGameSocket(): GameState {
       s.off("round_end", onRoundEnd);
       s.off("game_over", onGameOver);
       s.off("chat_msg", onChat);
+      s.off("reaction", onReaction);
       s.off("error", onErr);
     };
   }, []);
@@ -260,6 +276,11 @@ export function useGameSocket(): GameState {
     sockRef.current!.emit("chat", { text: text.slice(0, 200) });
   }, []);
 
+  const sendReaction = useCallback((emoji: string) => {
+    if (!emoji) return;
+    sockRef.current!.emit("reaction", { emoji });
+  }, []);
+
   const clearFriendAdvice = useCallback(() => setFriendAdvice(null), []);
 
   return {
@@ -278,6 +299,7 @@ export function useGameSocket(): GameState {
     winner,
     countdown,
     chat,
+    reactions,
     answeredIdx,
     fiftyRemoved,
     doubled,
@@ -291,6 +313,7 @@ export function useGameSocket(): GameState {
     submitAnswer,
     useHelp,
     sendChat,
+    sendReaction,
     clearFriendAdvice,
   };
 }

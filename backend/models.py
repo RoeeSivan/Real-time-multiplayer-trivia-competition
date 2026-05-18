@@ -42,3 +42,8 @@ class UseHelpIn(BaseModel):
 
 class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=config.CHAT_MAX_LEN)
+
+
+class ReactionIn(BaseModel):
+    # Compound emoji can be 4-8 bytes; allow up to 8 chars to cover ZWJ sequences.
+    emoji: str = Field(min_length=1, max_length=8)

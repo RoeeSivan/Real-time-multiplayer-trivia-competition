@@ -208,6 +208,19 @@ class GameManager:
             room=room.code,
         )
 
+    async def reaction(self, sid: str, emoji: str) -> None:
+        """Ephemeral emoji broadcast — no persistence, no history."""
+        link = self._require_link(sid)
+        room = self._require_room(link.room_code)
+        player = room.players.get(link.player_id)
+        if player is None:
+            return
+        await self.sio.emit(
+            "reaction",
+            {"player_id": player.id, "name": player.name, "emoji": emoji},
+            room=room.code,
+        )
+
     # --- Disconnect ------------------------------------------------------
 
     async def handle_disconnect(self, sid: str) -> None:

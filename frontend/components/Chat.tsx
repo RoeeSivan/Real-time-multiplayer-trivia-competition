@@ -5,14 +5,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ChatMsgEvt } from "@/lib/types";
 
 const QUICK_EMOJIS = ["😂", "🔥", "💀", "🎉", "🤯", "👏", "🤔", "🥲"];
+const QUICK_REACTIONS = ["🔥", "🎉", "💀", "🤯", "👏", "❤️", "😱", "🤣"];
 
 interface Props {
   messages: ChatMsgEvt[];
   selfId: string | null;
   onSend: (text: string) => void;
+  onReact: (emoji: string) => void;
 }
 
-export default function Chat({ messages, selfId, onSend }: Props) {
+export default function Chat({ messages, selfId, onSend, onReact }: Props) {
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -47,12 +49,28 @@ export default function Chat({ messages, selfId, onSend }: Props) {
         </AnimatePresence>
       </div>
 
-      <div className="flex gap-1 mb-2 flex-wrap">
+      <div className="flex items-center gap-1 mb-1 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wider text-muted mr-1">React</span>
+        {QUICK_REACTIONS.map((e) => (
+          <button
+            key={e}
+            onClick={() => onReact(e)}
+            title="Floats across all screens"
+            className="text-lg hover:scale-125 transition active:scale-95"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wider text-muted mr-1">Send</span>
         {QUICK_EMOJIS.map((e) => (
           <button
             key={e}
             onClick={() => onSend(e)}
-            className="text-lg hover:scale-110 transition"
+            title="Sent as a chat message"
+            className="text-lg hover:scale-110 transition opacity-80"
           >
             {e}
           </button>

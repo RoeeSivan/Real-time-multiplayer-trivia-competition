@@ -80,6 +80,24 @@ if [[ $MODE == "tunnel" ]]; then
     exit 1
   fi
 
+  # Kill any orphan tunnels (and stale dev servers) still holding our resources.
+  # Common cause: a previous session's terminal was closed without Ctrl-C, so
+  # the trap never fired and ngrok/cloudflared kept their reserved-domain
+  # claim. Without this the new ngrok session can't claim the static domain
+  # and curl-through-tunnel returns 502 (ERR_NGROK_8012) forever.
+  log "checking for orphan tunnels + listeners…"
+  for pat in "ngrok start --all --config .ngrok.yml" \
+             "cloudflared tunnel --url http://localhost:3000" \
+             "uvicorn backend.main:app" \
+             "next dev" "next start"; do
+    pids=$(pgrep -f "$pat" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+      warn "killing orphan: $pat ($pids)"
+      kill $pids 2>/dev/null || true
+    fi
+  done
+  sleep 1
+
   # Load NGROK_* + FRONTEND_URL placeholder from backend/.env without exporting OPENAI_API_KEY noise.
   set -a
   # shellcheck disable=SC1091
@@ -198,6 +216,23 @@ if [[ $MODE == "tunnel" ]]; then
     elif command -v xdg-open >/dev/null 2>&1; then
       xdg-open "$FRONTEND_URL_TUN/" >/dev/null 2>&1 || true
     fi
+  ) &
+
+  # Post-boot health probe via the public tunnel. Catches the "tunnel alive,
+  # local service dead" 502 (ERR_NGROK_8012) that bit us before.
+  (
+    sleep 6
+    for _ in 1 2 3; do
+      if curl -fsS --max-time 5 \
+           -H "ngrok-skip-browser-warning: 1" \
+           "$BACKEND_URL/health" >/dev/null 2>&1; then
+        printf "%s[run] ✓ backend reachable via tunnel%s\n" "$C_GREEN" "$C_RESET"
+        exit 0
+      fi
+      sleep 3
+    done
+    printf "%s[run] ✗ backend NOT reachable via tunnel (%s/health). Tunnels alive but service down? Check the uvicorn log above.%s\n" \
+      "$C_RED" "$BACKEND_URL" "$C_RESET" >&2
   ) &
 fi
 

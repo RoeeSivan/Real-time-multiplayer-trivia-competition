@@ -11,7 +11,12 @@ export default function QRPanel({ roomCode }: Props) {
   const [joinUrl, setJoinUrl] = useState<string>("");
 
   useEffect(() => {
-    const origin = window.location.origin;
+    // Prefer the public tunnel URL when --tunnel injected it. Without this,
+    // a host who opens http://localhost:3000 would broadcast an unreachable
+    // QR (phones can't resolve localhost). LAN mode (env unset) falls back
+    // to window.location.origin which encodes the laptop's LAN IP correctly.
+    const tunnel = process.env.NEXT_PUBLIC_TUNNEL_URL?.trim();
+    const origin = tunnel || window.location.origin;
     setJoinUrl(`${origin}/join/${roomCode}`);
   }, [roomCode]);
 

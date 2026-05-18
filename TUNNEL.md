@@ -88,6 +88,8 @@ Ctrl-C in the terminal kills backend, frontend, ngrok, and cloudflared cleanly.
 | QR encodes `localhost:3000/join/...` | host opened `http://localhost:3000/host` | Banner on `/host` shows the correct tunnel URL — click it. |
 | CORS error in browser console | `FRONTEND_URL` not exported to backend | confirm `./run.sh --tunnel` printed the trycloudflare URL; restart |
 | Frontend connects to wrong backend | stale `frontend/.env.local` | the script overwrites this file each run; if you ran `--prod` afterward, run `--tunnel` again |
+| Phone scan opens the trycloudflare URL but spins forever / errors. `curl $BACKEND_URL/health` returns `502 ERR_NGROK_8012`. | Backend died but tunnels still alive (orphans from a prior session whose terminal closed without Ctrl-C) | `pkill -f "ngrok start"; pkill -f cloudflared`, then `./run.sh --tunnel`. The script now kills orphans automatically at startup. |
+| Connection hangs the first time a phone joins, or socket.io polling 502s | ngrok free-tier interstitial intercepting Socket.IO handshake | Frontend already sends `ngrok-skip-browser-warning`. If still broken, visit `$BACKEND_URL/health` once in the phone browser to accept the interstitial cookie. |
 
 ## Files involved
 

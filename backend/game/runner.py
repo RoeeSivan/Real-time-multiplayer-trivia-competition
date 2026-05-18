@@ -139,6 +139,10 @@ class GameRunner:
                     "doubled": ans.doubled,
                     "points": ans.points,
                     "your_score": player.score,
+                    # streak = post-round counter (0 if just missed); multiplier
+                    # is what was actually applied to this round's score.
+                    "streak": player.streak,
+                    "streak_multiplier": ans.streak_multiplier,
                 },
                 to=player.sid,
             )

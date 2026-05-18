@@ -41,6 +41,10 @@ export interface AnswerResultEvt {
   doubled: boolean;
   points: number;
   your_score: number;
+  // Streak counter AFTER this round (0 if just missed); multiplier is what
+  // was applied to this round's score (uses the pre-round streak).
+  streak: number;
+  streak_multiplier: number;
 }
 
 export interface RoundEndEvt {
@@ -61,6 +65,18 @@ export interface ChatMsgEvt {
   player_id: string;
   name: string;
   text: string;
+}
+
+export interface ReactionEvt {
+  player_id: string;
+  name: string;
+  emoji: string;
+}
+
+// Reaction enriched with client-side display state.
+export interface ActiveReaction extends ReactionEvt {
+  id: string;
+  x: number; // horizontal % within viewport (5-95)
 }
 
 export interface AnswerReceivedEvt {

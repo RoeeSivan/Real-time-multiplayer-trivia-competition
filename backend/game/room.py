@@ -24,7 +24,7 @@ from typing import Literal
 from backend import config, db
 from backend.game import adaptive, bots
 from backend.game.player import Player
-from backend.game.scoring import compute_points
+from backend.game.scoring import compute_points, streak_multiplier
 
 log = logging.getLogger("trivia.room")
 
@@ -50,6 +50,7 @@ class AnswerRecord:
     correct: bool
     doubled: bool
     points: int
+    streak_multiplier: float = 1.0
 
 
 @dataclass
@@ -142,6 +143,7 @@ class Room:
             p.help_friend_used = False
             p.help_double_used = False
             p.double_armed = False
+            p.streak = 0
         self.state = "lobby"
         self.used_rowids.clear()
         self.current_question = None
@@ -221,11 +223,13 @@ class Room:
         correct = option_idx == self.current_question.correct_idx
         player = self.players[player_id]
         doubled = correct and player.double_armed
+        mult = streak_multiplier(player.streak)
         points = compute_points(
             correct=correct,
             elapsed=elapsed,
             time_limit=float(config.QUESTION_TIME),
             doubled=doubled,
+            streak_multiplier=mult,
         )
 
         rec = AnswerRecord(
@@ -235,6 +239,7 @@ class Room:
             correct=correct,
             doubled=doubled,
             points=points,
+            streak_multiplier=mult,
         )
         self.current_summary.answers[player_id] = rec  # overwrite OK
         return rec
@@ -257,10 +262,16 @@ class Room:
                 correct=False,
                 doubled=False,
                 points=0,
+                streak_multiplier=streak_multiplier(self.players[pid].streak),
             )
         # Apply scores once, using each player's *final* answer.
         for pid, ans in self.current_summary.answers.items():
             self.players[pid].score += ans.points
+        # Update streak counters AFTER applying scores so this round used the
+        # pre-round multiplier. Correct → +1, wrong/timeout → reset.
+        for pid, ans in self.current_summary.answers.items():
+            p = self.players[pid]
+            p.streak = p.streak + 1 if ans.correct else 0
         self.state = "reveal"
         self.history.append(self.current_summary)
         return self.current_summary
@@ -310,6 +321,7 @@ class Room:
                     elapsed=existing.elapsed,
                     time_limit=float(config.QUESTION_TIME),
                     doubled=True,
+                    streak_multiplier=existing.streak_multiplier,
                 )
 
     def mark_friend_used(self, player_id: str) -> None:

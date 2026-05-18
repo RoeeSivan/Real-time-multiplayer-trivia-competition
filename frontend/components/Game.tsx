@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { motion } from "framer-motion";
 import type { GameState } from "@/hooks/useGameSocket";
 import Countdown from "./Countdown";
 import QuestionView from "./QuestionView";
@@ -9,6 +10,7 @@ import Chat from "./Chat";
 import Helps from "./Helps";
 import FriendModal from "./FriendModal";
 import FinalLeaderboard from "./FinalLeaderboard";
+import ReactionOverlay from "./ReactionOverlay";
 
 interface Props {
   game: GameState;
@@ -38,6 +40,7 @@ export default function Game({ game }: Props) {
   if (game.phase === "ended" && game.finalLeaderboard) {
     return (
       <main className="min-h-screen p-6 flex items-center justify-center">
+        <ReactionOverlay reactions={game.reactions} />
         <FinalLeaderboard
           leaderboard={game.finalLeaderboard}
           winner={game.winner}
@@ -52,6 +55,7 @@ export default function Game({ game }: Props) {
   if (game.phase === "countdown") {
     return (
       <main className="min-h-screen p-6">
+        <ReactionOverlay reactions={game.reactions} />
         <Countdown seconds={game.countdown ?? 3} />
       </main>
     );
@@ -59,6 +63,7 @@ export default function Game({ game }: Props) {
 
   return (
     <main className="min-h-screen p-4 md:p-6">
+      <ReactionOverlay reactions={game.reactions} />
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[1fr_320px] gap-6">
         <div className="flex flex-col items-center gap-4">
           {(game.phase === "question" || game.phase === "feedback") && game.question && (
@@ -70,8 +75,22 @@ export default function Game({ game }: Props) {
                   disabled={game.phase === "feedback"}
                   onUse={(t) => game.useHelp(t)}
                 />
-                <div className="text-sm text-muted">
-                  Your score: <span className="font-mono text-accent">{game.myScore}</span>
+                <div className="text-sm text-muted flex items-center gap-2">
+                  <span>
+                    Your score: <span className="font-mono text-accent">{game.myScore}</span>
+                  </span>
+                  {game.myResult && game.myResult.streak >= 2 && (
+                    <motion.span
+                      key={`combo-${game.myResult.question_idx}`}
+                      initial={{ scale: 0.6, opacity: 0 }}
+                      animate={{ scale: [1, 1.3, 1], opacity: 1 }}
+                      transition={{ duration: 0.5 }}
+                      className="font-mono text-accent2 text-sm"
+                      title={`${game.myResult.streak} in a row`}
+                    >
+                      🔥 ×{game.myResult.streak_multiplier.toFixed(2)} ({game.myResult.streak})
+                    </motion.span>
+                  )}
                 </div>
               </div>
               <QuestionView
@@ -105,7 +124,12 @@ export default function Game({ game }: Props) {
               ))}
             </ul>
           </div>
-          <Chat messages={game.chat} selfId={game.selfId} onSend={game.sendChat} />
+          <Chat
+            messages={game.chat}
+            selfId={game.selfId}
+            onSend={game.sendChat}
+            onReact={game.sendReaction}
+          />
         </aside>
       </div>
 

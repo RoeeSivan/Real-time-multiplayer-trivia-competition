@@ -22,6 +22,12 @@ export function getSocket(): Socket {
     path: "/socket.io",
     transports: ["websocket", "polling"],
     autoConnect: true,
+    // ngrok free tier shows an HTML "Visit Site" interstitial for browser
+    // requests. The polling-transport XHR carries this header so ngrok bypasses
+    // the gate and returns the Socket.IO handshake JSON instead. Browsers
+    // strip headers from the WebSocket upgrade itself, but the session cookie
+    // set during polling carries the bypass into the WS upgrade.
+    extraHeaders: { "ngrok-skip-browser-warning": "1" },
   });
   return socket;
 }
