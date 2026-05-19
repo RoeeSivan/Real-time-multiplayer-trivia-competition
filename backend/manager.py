@@ -128,12 +128,23 @@ class GameManager:
             raise RoomError("Only host can restart")
         if room.state != "ended":
             raise RoomError("Game still running")
-        # Cancel the pending cleanup so the room survives.
+        log.info("[%s] host restarting game", room.code)
+        # Cancel the pending cleanup AND await its completion before mutating
+        # state. If we let it run concurrently with `_start`, its `finally`
+        # block could clobber the new runner/cleanup_task entries we are
+        # about to install (it pops by code, not by identity).
         pending = self.cleanup_tasks.pop(room.code, None)
         if pending is not None and not pending.done():
             pending.cancel()
+            try:
+                await pending
+            except (asyncio.CancelledError, Exception):
+                pass
         self.runners.pop(room.code, None)
         room.reset_for_replay()
+        # Fill bots BEFORE broadcasting lobby_update so every client sees the
+        # full roster (humans + freshly-pooled bot names) for the new match.
+        room.fill_with_bots_if_needed()
         await self.sio.emit(
             "lobby_update",
             {
@@ -168,16 +179,21 @@ class GameManager:
                     pass
             await asyncio.sleep(60)
         except asyncio.CancelledError:
+            # Restart cancelled us — it owns the room/runner lifecycle now,
+            # so we must NOT tear anything down. (The previous version ran
+            # cleanup in `finally`, which fired on cancellation too and
+            # popped the room out from under the in-flight restart, causing
+            # `_start` to raise "Room not found".)
             return
-        finally:
+        # Reached the 60s mark without being cancelled — game has actually
+        # ended for good, tear the room down.
+        if self.cleanup_tasks.get(code) is asyncio.current_task():
             self.cleanup_tasks.pop(code, None)
-            # If the current runner for this code isn't ours, a restart
-            # already swapped it in — leave the new runner + room alone.
-            if self.runners.get(code) is runner:
-                self.runners.pop(code, None)
-                room = self.rooms.pop(code, None)
-                if room is not None:
-                    log.info("cleaned up room %s", code)
+        if self.runners.get(code) is runner:
+            self.runners.pop(code, None)
+            room = self.rooms.pop(code, None)
+            if room is not None:
+                log.info("cleaned up room %s", code)
 
     # --- Player actions --------------------------------------------------
 
